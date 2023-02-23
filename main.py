@@ -2,10 +2,7 @@ import socket
 import time 
 import numpy as np
 import threading
-
-def client_connect(client, dest, port):
-    client.connect(dest, port)
-    print(f"[{client.name}] Connection request sent to [{dest}, {port}]")
+import argparse
 
 def client_thread(conn, addr):
     with conn:
@@ -17,18 +14,12 @@ def client_thread(conn, addr):
     print(f"[CONNECTION] Disconnected from {addr}")
 
 
-    # thread = threading.Thread(target=client_thread, args=(conn, addr))
-    # return thread
-
-
 class DroneAgent:
     def __init__(self, server_addr, server_dests):
-        self.server_socket = None
-        self.server_conns = []
-        self.client_conns = []
         self.server_dests = server_dests # Read from a launch file in future
-        self.connections = []
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.client_conns = [socket.socket(socket.AF_INET, socket.SOCK_STREAM) for _ in server_dests]
+
 
         self.server.bind(server_addr)
         self.server.listen(5)
@@ -37,34 +28,58 @@ class DroneAgent:
         thread = threading.Thread(target=self.open_server)
         thread.start()
 
-        for ip, port in self.server_dests:
-            client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client.connect((ip, port))
-            print(f"[CONNECTION] Connection made at {ip}:{port}")
-            self.client_conns.append(client)
+        thread = threading.Thread(target=self.search_for_conns)
+        thread.start()
 
         print(f"[INFO] DroneAgent {server_addr[0]}:{server_addr[1]} finished initiating")
 
-    def open_server(self,):
+    def open_server(self):
         while True:
             conn, addr = self.server.accept()
             print(f"[INFO] Starting thread for connection {addr}")
             thread = threading.Thread(target=client_thread, args=(conn, addr))
             thread.start()
+    
+    def search_for_conns(self):
+        while True: 
+            for idx, client in enumerate(self.client_conns):
+                try: 
+                    client.send(1)
+                    
+                except:
+                    try:
+                        ip, port = self.server_dests[idx]
+                        client.connect((ip, port))
+                        print(f"[CONNECTION] Connection made at {ip}:{port}")
+                        self.client_conns.append(client)
+                    except:
+                        # print(f"[CONNECTION] Unable to connect to {ip}:{port}")
+                        pass
+            time.sleep(60)
+                
 
     def spin(self):
         while True:
             image = np.random.normal(size=(32,32)).tobytes()
             for client in self.client_conns:
-                print(f"[INFO] {client} sending image...")
-                client.send(image)
-                time.sleep(20)
+                try:
+                    print(f"[INFO] {client} sending image...")
+                    client.send(image)
+                except:
+                    pass 
+            time.sleep(10)
 
-SERVER = socket.gethostbyname(socket.gethostname())
+parser = argparse.ArgumentParser()
+parser.add_argument('-s', '--server-ip', default=socket.gethostbyname(socket.gethostname()), type=str)
+parser.add_argument('-p', '--server-port', default=9797, type=int)
+args = parser.parse_args()
 
-SERVER_ADDR = (socket.gethostbyname(socket.gethostname()), 9797)
+SERVER_ADDR = (args.server_ip, args.server_port)
 server_dests = [
-                ["192.168.56.1", 9797]
+                ["192.168.56.1", 9797],
+                ["192.168.56.1", 9898]
                ]
+
+print(SERVER_ADDR[0])
 drone = DroneAgent(SERVER_ADDR, server_dests)
 drone.spin()
