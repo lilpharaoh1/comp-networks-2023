@@ -5,21 +5,32 @@ import threading
 import argparse
 import os
 import json
+from PIL import Image
+from pickle import dumps, loads
+
+IMAGE_SHAPE = (12, 12)
 
 def client_thread(conn, addr):
     with conn:
         # image_handle, image_idx = np.zeros((32, 32), np.int8), 0
         print(f"[CONNECTION] Connection received at {addr}")
 
-        client_name = str(addr[0]) + '_' + str(addr[1])
-        if not os.path.isdir('data'):
-            os.mkdir('data')
-        if str(client_name) not in os.listdir('data'):
-            os.mkdir('data/' + client_name)
+        # client_name = str(addr[0]) + '_' + str(addr[1])
+        # if not os.path.isdir('data'):
+        #     os.mkdir('data')
+        # if str(client_name) not in os.listdir('data'):
+        #     os.mkdir('data/' + client_name)
 
+        img_num = 0
         while True:
-            data = conn.recv(1024)
-            print(f"[{addr}] Received Packet...")
+            print("[CONNECTION] Received Packet...")
+            data = conn.recv(4096)
+            print("data : ", data, len(data))
+            image = loads(data)
+            print("image : ", image, len(image))
+            # pil_image = Image.fromarray(image.reshape(IMAGE_SHAPE))
+            # pil_image.save("data/" + client_name + "/" + str(img_num) + ".png")
+            # img_num += 1
     print(f"[CONNECTION] Disconnected from {addr}")
 
 
@@ -91,7 +102,10 @@ class DroneAgent:
 
     def spin(self):
         while True:
-            image = np.random.normal(size=(32,32)).tobytes()
+            # image = np.random.randint(255, size=IMAGE_SHAPE, dtype=np.uint8).tobytes() # Camera Feed
+            image = np.random.randint(255, size=IMAGE_SHAPE)
+            image = dumps(image)
+
             for client in self.client_conns:
                 try:
                     if (client.getsockname()[0] != '0.0.0.0'):
