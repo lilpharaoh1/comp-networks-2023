@@ -15,11 +15,11 @@ def client_thread(conn, addr):
         # image_handle, image_idx = np.zeros((32, 32), np.int8), 0
         print(f"[CONNECTION] Connection received at {addr}")
 
-        # client_name = str(addr[0]) + '_' + str(addr[1])
-        # if not os.path.isdir('data'):
-        #     os.mkdir('data')
-        # if str(client_name) not in os.listdir('data'):
-        #     os.mkdir('data/' + client_name)
+        client_name = str(addr[0]) + '_' + str(addr[1])
+        if not os.path.isdir('data'):
+            os.mkdir('data')
+        if str(client_name) not in os.listdir('data'):
+            os.mkdir('data/' + client_name)
 
         img_num = 0
         while True:
@@ -28,9 +28,9 @@ def client_thread(conn, addr):
             print("data : ", data, len(data))
             image = loads(data)
             print("image : ", image, len(image))
-            # pil_image = Image.fromarray(image.reshape(IMAGE_SHAPE))
-            # pil_image.save("data/" + client_name + "/" + str(img_num) + ".png")
-            # img_num += 1
+            pil_image = Image.fromarray(image.reshape(IMAGE_SHAPE))
+            pil_image.save("data/" + client_name + "/" + str(img_num) + ".png")
+            img_num += 1
     print(f"[CONNECTION] Disconnected from {addr}")
 
 
@@ -97,7 +97,7 @@ class DroneAgent:
                     except:
                         # print(f"[CONNECTION] Unable to connect to {ip}:{port}")
                         pass
-            time.sleep(60)
+            time.sleep(30)
                 
 
     def spin(self):
@@ -105,6 +105,9 @@ class DroneAgent:
             # image = np.random.randint(255, size=IMAGE_SHAPE, dtype=np.uint8).tobytes() # Camera Feed
             image = np.random.randint(255, size=IMAGE_SHAPE)
             image = dumps(image)
+
+            ## Make the .yaml file
+            ## file = self.pose information
 
             for client in self.client_conns:
                 try:
@@ -131,3 +134,26 @@ if __name__ == '__main__':
     print(SERVER_ADDR[0])
     drone = DroneAgent(SERVER_ADDR, server_dests)
     drone.spin()
+
+
+
+
+#     rosbag2_bagfile_information:
+#   version: 4
+#   storage_identifier: sqlite3
+#   relative_file_paths:
+#     - real-stat-odom.db3
+#   duration:
+#     nanoseconds: 43998124512
+#   starting_time:
+#     nanoseconds_since_epoch: 1657209849978848788
+#   message_count: 4403
+#   topics_with_message_count:
+#     - topic_metadata:
+#         name: /ros_can/twist
+#         type: geometry_msgs/msg/TwistWithCovarianceStamped
+#         serialization_format: cdr
+#         offered_qos_profiles: "- history: 1\n  depth: 1\n  reliability: 1\n  durability: 2\n  deadline:\n    sec: 9223372036\n    nsec: 854775807\n  lifespan:\n    sec: 9223372036\n    nsec: 854775807\n  liveliness: 1\n  liveliness_lease_duration:\n    sec: 9223372036\n    nsec: 854775807\n  avoid_ros_namespace_conventions: false"
+#       message_count: 4403
+#   compression_format: ""
+#   compression_mode: ""
