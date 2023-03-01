@@ -7,6 +7,7 @@ import os
 import json
 from PIL import Image
 from pickle import dumps, loads
+import yaml
 
 IMAGE_SHAPE = (12, 12)
 
@@ -26,10 +27,20 @@ def client_thread(conn, addr):
             print("[CONNECTION] Received Packet...")
             data = conn.recv(4096)
             print("data : ", data, len(data))
-            image = loads(data)
-            print("image : ", image, len(image))
+            received_data = loads(data)
+            # print(received_data) this was for debugging
+            print(received_data)
+
+            print("metadata received")
+            metaData=received_data[0]
+            with open("data/" + client_name + "/" + str(img_num) + ".yml", 'w') as outfile:
+                yaml.dump(metaData, outfile, default_flow_style=False)
+            print("image received")
+            image = received_data[1]
             pil_image = Image.fromarray(image.reshape(IMAGE_SHAPE))
             pil_image.save("data/" + client_name + "/" + str(img_num) + ".png")
+            print("image : ", image, len(image))
+
             img_num += 1
     print(f"[CONNECTION] Disconnected from {addr}")
 
@@ -104,16 +115,19 @@ class DroneAgent:
         while True:
             # image = np.random.randint(255, size=IMAGE_SHAPE, dtype=np.uint8).tobytes() # Camera Feed
             image = np.random.randint(255, size=IMAGE_SHAPE)
-            image = dumps(image)
-
-            ## Make the .yaml file
-            ## file = self.pose information
+            # image = dumps(image)
+            # metaData=dumps(self.pose)
+            metaData=self.pose
+            dataList=[metaData,image]
+            dataList=dumps(dataList)
 
             for client in self.client_conns:
                 try:
                     if (client.getsockname()[0] != '0.0.0.0'):
                         print(f"[INFO] {client.getsockname()} sending image...")
-                        client.send(image)
+                        client.send(dataList)
+
+
                 except:
                     pass 
             time.sleep(10)
@@ -134,26 +148,3 @@ if __name__ == '__main__':
     print(SERVER_ADDR[0])
     drone = DroneAgent(SERVER_ADDR, server_dests)
     drone.spin()
-
-
-
-
-#     rosbag2_bagfile_information:
-#   version: 4
-#   storage_identifier: sqlite3
-#   relative_file_paths:
-#     - real-stat-odom.db3
-#   duration:
-#     nanoseconds: 43998124512
-#   starting_time:
-#     nanoseconds_since_epoch: 1657209849978848788
-#   message_count: 4403
-#   topics_with_message_count:
-#     - topic_metadata:
-#         name: /ros_can/twist
-#         type: geometry_msgs/msg/TwistWithCovarianceStamped
-#         serialization_format: cdr
-#         offered_qos_profiles: "- history: 1\n  depth: 1\n  reliability: 1\n  durability: 2\n  deadline:\n    sec: 9223372036\n    nsec: 854775807\n  lifespan:\n    sec: 9223372036\n    nsec: 854775807\n  liveliness: 1\n  liveliness_lease_duration:\n    sec: 9223372036\n    nsec: 854775807\n  avoid_ros_namespace_conventions: false"
-#       message_count: 4403
-#   compression_format: ""
-#   compression_mode: ""
