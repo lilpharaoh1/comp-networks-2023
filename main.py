@@ -36,10 +36,10 @@ def client_thread(conn, addr):
             with open("data/" + client_name + "/" + str(img_num) + ".yml", 'w') as outfile:
                 yaml.dump(metaData, outfile, default_flow_style=False)
             print("image received")
-            # image = received_data[1]
-            # pil_image = Image.fromarray(image.reshape(IMAGE_SHAPE))
-            # pil_image.save("data/" + client_name + "/" + str(img_num) + ".png")
-            # print("image : ", image, len(image))
+            image = received_data[1]
+            pil_image = Image.fromarray(image.reshape(IMAGE_SHAPE))
+            pil_image.save("data/" + client_name + "/" + str(img_num) + ".png")
+            print("image : ", image, len(image))
 
             img_num += 1
     print(f"[CONNECTION] Disconnected from {addr}")
