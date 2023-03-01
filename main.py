@@ -21,6 +21,12 @@ def client_thread(conn, addr):
         if str(client_name) not in os.listdir('data'):
             os.mkdir('data/' + client_name)
 
+        # If received Data: 
+            # (is metadatat file?)
+                # Save with the right file name
+                # Save into the right folder
+
+
         img_num = 0
         while True:
             print("[CONNECTION] Received Packet...")
