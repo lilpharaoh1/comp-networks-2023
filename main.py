@@ -43,9 +43,18 @@ class DroneAgent:
         self.server_addr = server_addr
         self.pose = None
         self.server_dests = self.parse_server_dests(server_dests)
-        print(self.server_dests)
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.client_conns = [socket.socket(socket.AF_INET, socket.SOCK_STREAM) for _ in self.server_dests]
+        self.client_conns = {"connections":[]}
+
+        for idx, (ip, port, state) in enumerate(self.server_dests):
+            self.client_conns["connections"].append({
+                "conn": socket.socket(socket.AF_INET, socket.SOCK_STREAM),
+                "ip": ip,
+                "port": port,
+                "pose": state
+            })
+            print(self.client_conns["connections"][-1])
+
 
         self.server.bind(self.server_addr)
         self.server.listen(5)
@@ -62,11 +71,11 @@ class DroneAgent:
     def parse_server_dests(self, server_dests):
         out = []
         del_idx = None
-        for idx, (ip, port, pose) in enumerate(server_dests):
+        for idx, (ip, port, state) in enumerate(server_dests):
             if self.server_addr == (ip, port):
-                self.pose = pose
+                self.pose = state
                 continue
-            out.append((ip, port, pose))
+            out.append((ip, port, state))
         if isinstance(del_idx, int):
             out.pop(idx)
         return out
@@ -83,18 +92,15 @@ class DroneAgent:
     def search_for_conns(self):
         while True: 
             print(f"[CONNECTION] Looking for connections")
-            for idx, client in enumerate(self.client_conns):
+            for idx, client in enumerate(self.client_conns["connections"]):
                 try: 
-                    client.send(1)
+                    client["conn"].send(1)
                 except:
                     try:
-                        ip, port = self.server_dests[idx]
-                        print(f"[CONNECTION] Searching for {ip}:{port}...")
-                        client.connect((ip, port))
+                        ip, port, _ = self.server_dests[idx]
+                        client["conn"].connect((ip, port))
                         print(f"[CONNECTION] Connection made at {ip}:{port}")
-                        self.client_conns.append(client)
                     except:
-                        # print(f"[CONNECTION] Unable to connect to {ip}:{port}")
                         pass
             time.sleep(10)
                 
@@ -108,10 +114,10 @@ class DroneAgent:
             ## Make the .yaml file
             ## file = self.pose information
 
-            for client in self.client_conns:
+            for client in self.client_conns["connections"]:
                 try:
-                    if (client.getsockname()[0] != '0.0.0.0'):
-                        print(f"[INFO] {client.getsockname()} sending image...")
+                    if (client["conn"].getsockname()[0] != '0.0.0.0'):
+                        # print(f"[INFO] {client[str(idx)]["conn"].getsockname()} sending image...")
                         client.send(image)
                 except:
                     pass 
@@ -127,7 +133,7 @@ if __name__ == '__main__':
     
     with open('server_dests.json') as f:
         data = json.load(f)
-        server_dests = [(agent["ip"], agent["port"], agent["pose"]) for agent in data["info"]]
+        server_dests = [(agent["ip"], agent["port"], agent["state"]) for agent in data["info"]]
         f.close()
 
     print(SERVER_ADDR[0])
