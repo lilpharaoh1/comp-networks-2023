@@ -2,11 +2,63 @@
     "info": [
         {
             "ip": "192.168.56.1",
-            "port": 9797 
+            "port": 9797,
+            "pose" :{
+                    "header" : null,
+                    "gps_status": null,
+                    "pose": {
+                        "latitude": 390.0000,
+                        "longitue": 390.0000,
+                        "altitude": 100.0000
+                    },
+                    "imu": {
+                        "x": 1.56784,
+                        "y": 1.00325,
+                        "z": 0.67735,
+                        "w": 0.00000
+                    },
+                    "covariances": [0, 0, 0, 0, 0, 0, 0]
+                    }
         },
         {
             "ip": "192.168.56.1",
-            "port": 9898 
+            "port": 9898,
+            "pose":{
+                "header" : null,
+                "gps_status": null,
+                "pose": {
+                    "latitude": 391.00000,
+                    "longitue": 391.00000,
+                    "altitude": 101.00000
+                },
+                "imu": {
+                    "x": 1.56784,
+                    "y": 1.00325,
+                    "z": 0.67735,
+                    "w": 0.00000
+                },
+                "covariances": [0, 0, 0, 0, 0, 0, 0]
+                }
+        },
+        {
+            "ip": "192.168.56.1",
+            "port": 9999,
+            "pose":{
+                "header" : null,
+                "gps_status": null,
+                "pose": {
+                    "latitude": 392.00000,
+                    "longitue": 392.00000,
+                    "altitude": 102.00000
+                },
+                "imu": {
+                    "x": 1.56784,
+                    "y": 1.00325,
+                    "z": 0.67735,
+                    "w": 0.00000
+                },
+                "covariances": [0, 0, 0, 0, 0, 0, 0]
+                }
         }
     ]
 }
