@@ -29,11 +29,9 @@ def client_thread(conn, addr):
 
         img_num = 0
         while True:
-            print("[CONNECTION] Received Packet...")
+            print(f"[CONNECTION] Received Packet from {addr}...")
             data = conn.recv(4096)
-            print("data : ", data, len(data))
             image = loads(data)
-            print("image : ", image, len(image))
             pil_image = Image.fromarray(image.reshape(IMAGE_SHAPE))
             pil_image.save("data/" + client_name + "/" + str(img_num) + ".png")
             img_num += 1
@@ -43,25 +41,10 @@ def client_thread(conn, addr):
 class DroneAgent:
     def __init__(self, server_addr, server_dests):
         self.server_addr = server_addr
-        self.server_dests = server_dests # Read from a launch file in future
-        self.pose = { # Based on ROS sensor_msgs/NatSatFix and sensor_msgs/Imu
-            'header' : None,
-            'gps_status': None,
-            'pose': {
-                'latitude': 308.19657,
-                'longitue': 391.66570,
-                'altitude': 109.53409
-            },
-            'imu': {
-                'x': 1.56784,
-                'y': 1.00325,
-                'z': 0.67735,
-                'w': 0.00000
-            },
-            'covariances': [0, 0, 0, 0, 0, 0, 0]
-        }
+        self.pose = None
+        self.server_dests = self.parse_server_dests(server_dests)
+        print(self.server_dests)
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.parse_server_dests()
         self.client_conns = [socket.socket(socket.AF_INET, socket.SOCK_STREAM) for _ in self.server_dests]
 
         self.server.bind(self.server_addr)
@@ -76,11 +59,19 @@ class DroneAgent:
 
         print(f"[INFO] DroneAgent {self.server_addr[0]}:{self.server_addr[1]} finished initiating")
 
-    def parse_server_dests(self):
-        for idx, entry in enumerate(self.server_dests):
-            if self.server_addr == entry:
-                self.server_dests.pop(idx)
-                return
+    def parse_server_dests(self, server_dests):
+        out = []
+        del_idx = None
+        for idx, (ip, port, pose) in enumerate(server_dests):
+            if self.server_addr == (ip, port):
+                self.pose = pose
+                continue
+            out.append((ip, port, pose))
+        if isinstance(del_idx, int):
+            out.pop(idx)
+        return out
+        
+
 
     def open_server(self):
         while True:
@@ -91,19 +82,21 @@ class DroneAgent:
     
     def search_for_conns(self):
         while True: 
+            print(f"[CONNECTION] Looking for connections")
             for idx, client in enumerate(self.client_conns):
                 try: 
                     client.send(1)
                 except:
                     try:
                         ip, port = self.server_dests[idx]
+                        print(f"[CONNECTION] Searching for {ip}:{port}...")
                         client.connect((ip, port))
                         print(f"[CONNECTION] Connection made at {ip}:{port}")
                         self.client_conns.append(client)
                     except:
                         # print(f"[CONNECTION] Unable to connect to {ip}:{port}")
                         pass
-            time.sleep(30)
+            time.sleep(10)
                 
 
     def spin(self):
@@ -122,7 +115,7 @@ class DroneAgent:
                         client.send(image)
                 except:
                     pass 
-            time.sleep(10)
+            time.sleep(5)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -134,7 +127,7 @@ if __name__ == '__main__':
     
     with open('server_dests.json') as f:
         data = json.load(f)
-        server_dests = [(agent["ip"], agent["port"]) for agent in data["info"]]
+        server_dests = [(agent["ip"], agent["port"], agent["pose"]) for agent in data["info"]]
         f.close()
 
     print(SERVER_ADDR[0])
