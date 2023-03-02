@@ -9,6 +9,7 @@ from PIL import Image
 from pickle import dumps, loads
 
 IMAGE_SHAPE = (12, 12)
+CONNECTION_LIMIT = 2 # Meters
 
 def client_thread(conn, addr):
     with conn:
@@ -37,11 +38,18 @@ def client_thread(conn, addr):
             img_num += 1
     print(f"[CONNECTION] Disconnected from {addr}")
 
+def check_dist(state_one, state_two):
+    lat_dist = state_one["pose"]["latitude"] - state_two["pose"]["latitude"]
+    long_dist = state_one["pose"]["longitude"] - state_two["pose"]["longitude"]
+    alt_dist = state_one["pose"]["altitude"] - state_two["pose"]["altitude"]
+    dist = np.sqrt(np.power(lat_dist, 2) + np.power(long_dist, 2) + np.power(alt_dist, 2))
+
+    return dist
 
 class DroneAgent:
     def __init__(self, server_addr, server_dests):
         self.server_addr = server_addr
-        self.pose = None
+        self.state = None
         self.server_dests = self.parse_server_dests(server_dests)
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client_conns = {"connections":[]}
@@ -51,9 +59,8 @@ class DroneAgent:
                 "conn": socket.socket(socket.AF_INET, socket.SOCK_STREAM),
                 "ip": ip,
                 "port": port,
-                "pose": state
+                "state": state
             })
-            print(self.client_conns["connections"][-1])
 
 
         self.server.bind(self.server_addr)
@@ -73,14 +80,12 @@ class DroneAgent:
         del_idx = None
         for idx, (ip, port, state) in enumerate(server_dests):
             if self.server_addr == (ip, port):
-                self.pose = state
+                self.state = state
                 continue
             out.append((ip, port, state))
         if isinstance(del_idx, int):
             out.pop(idx)
         return out
-        
-
 
     def open_server(self):
         while True:
@@ -97,9 +102,11 @@ class DroneAgent:
                     client["conn"].send(1)
                 except:
                     try:
-                        ip, port, _ = self.server_dests[idx]
-                        client["conn"].connect((ip, port))
-                        print(f"[CONNECTION] Connection made at {ip}:{port}")
+                        if check_dist(self.state, client["state"]) <= CONNECTION_LIMIT:
+                            ip, port, _ = self.server_dests[idx]
+                            print(f"[CONNECTION] Searching for {ip}:{port}...")
+                            client["conn"].connect((ip, port))
+                            print(f"[CONNECTION] Connection made at {ip}:{port}")
                     except:
                         pass
             time.sleep(10)
