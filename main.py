@@ -7,36 +7,13 @@ import os
 import json
 from PIL import Image
 from pickle import dumps, loads
+import yaml
+from collections import deque
 
 IMAGE_SHAPE = (12, 12)
 CONNECTION_LIMIT = 2 # Meters
 
-def client_thread(conn, addr):
-    with conn:
-        # image_handle, image_idx = np.zeros((32, 32), np.int8), 0
-        print(f"[CONNECTION] Connection received at {addr}")
 
-        client_name = str(addr[0]) + '_' + str(addr[1])
-        if not os.path.isdir('data'):
-            os.mkdir('data')
-        if str(client_name) not in os.listdir('data'):
-            os.mkdir('data/' + client_name)
-
-        # If received Data: 
-            # (is metadatat file?)
-                # Save with the right file name
-                # Save into the right folder
-
-
-        img_num = 0
-        while True:
-            print(f"[CONNECTION] Received Packet from {addr}...")
-            data = conn.recv(4096)
-            image = loads(data)
-            pil_image = Image.fromarray(image.reshape(IMAGE_SHAPE))
-            pil_image.save("data/" + client_name + "/" + str(img_num) + ".png")
-            img_num += 1
-    print(f"[CONNECTION] Disconnected from {addr}")
 
 def check_dist(state_one, state_two):
     lat_dist = state_one["pose"]["latitude"] - state_two["pose"]["latitude"]
@@ -53,14 +30,17 @@ class DroneAgent:
         self.server_dests = self.parse_server_dests(server_dests)
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client_conns = {"connections":[]}
+        self.forward_queue = deque(maxlen=10)
 
-        for idx, (ip, port, state) in enumerate(self.server_dests):
+        for ip, port, state in self.server_dests:
             self.client_conns["connections"].append({
                 "conn": socket.socket(socket.AF_INET, socket.SOCK_STREAM),
                 "ip": ip,
                 "port": port,
                 "state": state
             })
+            # print(self.client_conns["connections"][-1])
+
 
 
         self.server.bind(self.server_addr)
@@ -89,17 +69,19 @@ class DroneAgent:
 
     def open_server(self):
         while True:
+            print("[INFO] Waiting to accept clients'")
             conn, addr = self.server.accept()
             print(f"[INFO] Starting thread for connection {addr}")
-            thread = threading.Thread(target=client_thread, args=(conn, addr))
+            thread = threading.Thread(target=self.client_thread, args=(conn, addr))
             thread.start()
     
     def search_for_conns(self):
         while True: 
             print(f"[CONNECTION] Looking for connections")
             for idx, client in enumerate(self.client_conns["connections"]):
-                try: 
-                    client["conn"].send(1)
+                try:
+                    ping = 1
+                    client["conn"].send(ping.to_bytes(1, 'little'))
                 except:
                     try:
                         if check_dist(self.state, client["state"]) <= CONNECTION_LIMIT:
@@ -110,24 +92,72 @@ class DroneAgent:
                     except:
                         pass
             time.sleep(10)
-                
+
+    def client_thread(self, conn, addr):
+        with conn:
+            # image_handle, image_idx = np.zeros((32, 32), np.int8), 0
+            print(f"[CONNECTION] Connection received at {addr}")
+
+            client_name = str(addr[0]) + '_' + str(addr[1])
+            if not os.path.isdir('data'):
+                os.mkdir('data')
+            if str(client_name) not in os.listdir('data'):
+                os.mkdir('data/' + client_name)
+
+            img_num = 0
+            while True:
+                try:
+                    data = conn.recv(4096)
+                    if data == int(1).to_bytes(1, 'little'):
+                        print("[CONNECTION] Ping received")
+                        continue
+                    else:
+                        print(f"[CONNECTION] Received Packet from {addr}...")
+                except: 
+                    print("[ERROR] Error with conn.recv")
+                data = loads(data)
+                dest, state, image = data["dest"], data["state"], data["image"]
+                print(f"Packet looking for {dest}...")
+                if (data["dest"] == self.server_addr):
+                    # Handle state
+                    for client in self.client_conns["connections"]:
+                        if (client["ip"], client["port"]) is dest:
+                            client["state"] = state
+                            break
+                    with open("data/" + client_name + "/" + str(img_num) + ".yml", 'w') as outfile:
+                        yaml.dump(state, outfile, default_flow_style=False)
+
+                    # Handle image
+                    pil_image = Image.fromarray(image.reshape(IMAGE_SHAPE))
+                    pil_image.save("data/" + client_name + "/" + str(img_num) + ".png")
+                    img_num += 1
+                else:
+                    self.forward_queue.append(data)
+        print(f"[CONNECTION] Disconnected from {addr}")  
+
+    def send_data(self, client, data):
+        data["dest"] = (client["ip"], client["port"])
+        msg = dumps(data)
+        client["conn"].send(msg)
 
     def spin(self):
         while True:
             # image = np.random.randint(255, size=IMAGE_SHAPE, dtype=np.uint8).tobytes() # Camera Feed
-            image = np.random.randint(255, size=IMAGE_SHAPE)
-            image = dumps(image)
+            image = np.random.randint(255, size=IMAGE_SHAPE, dtype=np.uint8) # Camera Feed
+            data = {
+                "dest" : (None, None),
+                "state" : self.state,
+                "image": image
+            }
 
-            ## Make the .yaml file
-            ## file = self.pose information
 
             for client in self.client_conns["connections"]:
                 try:
                     if (client["conn"].getsockname()[0] != '0.0.0.0'):
-                        # print(f"[INFO] {client[str(idx)]["conn"].getsockname()} sending image...")
-                        client.send(image)
+                        self.send_data(client, data)
                 except:
                     pass 
+
             time.sleep(5)
 
 if __name__ == '__main__':
@@ -146,9 +176,6 @@ if __name__ == '__main__':
     print(SERVER_ADDR[0])
     drone = DroneAgent(SERVER_ADDR, server_dests)
     drone.spin()
-
-
-
 
 #     rosbag2_bagfile_information:
 #   version: 4
