@@ -22,7 +22,7 @@
         },
         {
             "ip": "192.168.56.1",
-            "port": 9898,
+            "port": 9999,
             "state":{
                 "header" : null,
                 "gps_status": null,
@@ -42,7 +42,7 @@
         },
         {
             "ip": "192.168.56.1",
-            "port": 9999,
+            "port": 1000,
             "state":{
                 "header" : null,
                 "gps_status": null,
@@ -50,6 +50,26 @@
                     "latitude": 392.00000,
                     "longitude": 392.00000,
                     "altitude": 102.00000
+                },
+                "imu": {
+                    "x": 1.56784,
+                    "y": 1.00325,
+                    "z": 0.67735,
+                    "w": 0.00000
+                },
+                "covariances": [0, 0, 0, 0, 0, 0, 0]
+                }
+        },
+        {
+            "ip": "192.168.56.1",
+            "port": 9898,
+            "state":{
+                "header" : null,
+                "gps_status": null,
+                "pose": {
+                    "latitude": 393.00000,
+                    "longitude": 393.00000,
+                    "altitude": 103.00000
                 },
                 "imu": {
                     "x": 1.56784,

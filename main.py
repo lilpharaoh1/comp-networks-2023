@@ -14,7 +14,18 @@ IMAGE_SHAPE = (12, 12)
 CONNECTION_LIMIT = 2 # Meters
 MAX_TRANS_DIST = 20
 
-
+def sort_server_dests(arr):
+    """
+    Bubble Sort -> Small array, low moving cost
+    """
+    swapped = False
+    for i in range(len(arr) - 1):
+        for j in range(0, len(arr) - i - 1):
+            if (arr[j][1] < arr[j + 1][1]):
+                swapped = True
+                arr[j], arr[j + 1] = arr[j + 1], arr[j]
+        if not swapped:
+            return
 
 def check_dist(state_one, state_two):
     lat_dist = state_one["pose"]["latitude"] - state_two["pose"]["latitude"]
@@ -32,7 +43,8 @@ class DroneAgent:
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client_conns = {"connections":[]}
         self.forward_queue = deque(maxlen=10)
-
+        
+        sort_server_dests(self.server_dests)
         for ip, port, state in self.server_dests:
             self.client_conns["connections"].append({
                 "conn": socket.socket(socket.AF_INET, socket.SOCK_STREAM),
@@ -40,8 +52,6 @@ class DroneAgent:
                 "port": port,
                 "state": state
             })
-            # print(self.client_conns["connections"][-1])
-
 
 
         self.server.bind(self.server_addr)
@@ -86,7 +96,7 @@ class DroneAgent:
                 except:
                     try:
                         if check_dist(self.state, client["state"]) <= CONNECTION_LIMIT:
-                            ip, port, _ = self.server_dests[idx]
+                            ip, port, _, _ = self.server_dests[idx]
                             print(f"[CONNECTION] Searching for {ip}:{port}...")
                             client["conn"].connect((ip, port))
                             print(f"[CONNECTION] Connection made at {ip}:{port}")
