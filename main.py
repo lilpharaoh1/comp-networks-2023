@@ -44,7 +44,7 @@ class DroneAgent:
         self.client_conns = {"connections":[]}
         self.forward_queue = deque(maxlen=10)
         
-        sort_server_dests(self.server_dests)
+        # sort_server_dests(self.server_dests)
         for ip, port, state in self.server_dests:
             self.client_conns["connections"].append({
                 "conn": socket.socket(socket.AF_INET, socket.SOCK_STREAM),
@@ -80,7 +80,7 @@ class DroneAgent:
 
     def open_server(self):
         while True:
-            print("[INFO] Waiting to accept clients'")
+            print("[INFO] Waiting to accept clients")
             conn, addr = self.server.accept()
             print(f"[INFO] Starting thread for connection {addr}")
             thread = threading.Thread(target=self.client_thread, args=(conn, addr))
@@ -91,16 +91,21 @@ class DroneAgent:
             print(f"[CONNECTION] Looking for connections")
             for idx, client in enumerate(self.client_conns["connections"]):
                 try:
+
                     ping = 1
                     client["conn"].send(ping.to_bytes(1, 'little'))
                 except:
+                    print("here...")
                     try:
+                        print("about to check distance...")
                         if check_dist(self.state, client["state"]) <= CONNECTION_LIMIT:
+                            print("Distance Checked...")
                             ip, port, _, _ = self.server_dests[idx]
                             print(f"[CONNECTION] Searching for {ip}:{port}...")
                             client["conn"].connect((ip, port))
                             print(f"[CONNECTION] Connection made at {ip}:{port}")
                     except:
+                        print("Error checking distance...")
                         pass
             time.sleep(10)
 
@@ -145,11 +150,6 @@ class DroneAgent:
                     self.forward_queue.append(data)
         print(f"[CONNECTION] Disconnected from {addr}")  
 
-    def send_data(self, client, data):
-        data["dest"] = (client["ip"], client["port"])
-        msg = dumps(data)
-        client["conn"].send(msg)
-
     def next_best(self, dest_state, data):
         """
         Greedy BFS to find shortest path -> quick
@@ -165,7 +165,7 @@ class DroneAgent:
                 pass
         
 
-        dest = data["dest"] # for debugging
+        # dest = data["dest"] # for debugging
         if own_dist > next_best[1]:
             msg = dumps(data)
             next_best[0].send(msg)
@@ -174,8 +174,24 @@ class DroneAgent:
             # print(f"[LOSS] No path found to {dest[0]}:{dest[1]}:!")
             pass
 
-            
-                
+
+    def send_msg(self, client, data):        
+        try:
+            if (client["conn"].getsockname()[0] != '0.0.0.0'):
+                # print("Directly connected...")
+                data["dest"] = (client["ip"], client["port"])
+                msg = dumps(data)
+                client["conn"].send(msg)
+            else:
+                data["dest"] = (client["ip"], client["port"])
+                dest_state = client["state"]
+                self.next_best(dest_state, data)
+        except:
+            # print("Hostname Error")
+            data["dest"] = (client["ip"], client["port"])
+            dest_state = client["state"]
+            self.next_best(dest_state, data)
+           
 
     def spin(self):
         while True:
@@ -187,22 +203,28 @@ class DroneAgent:
                 "image": image
             }
 
+            # for message in self.forward_queue:
+            #     client = None
+            #     top, bottom = 0, len(self.client_conns["connections"]) - 1
+            #     while (top != bottom):
+            #         mid = (top + bottom) // 2
+            #         if (message["ip"], message["port"]) is \
+            #             (self.client_conns["connections"][mid]["ip"], \
+            #              self.client_conns["connections"][mid]["port"]):
+            #             client = self.client_conns["connections"][mid]
+            #         elif message["port"] < self.client_conns["connections"][mid]["port"]:
+            #             bottom = mid + 1
+            #         else:
+            #             top = mid - 1 
+                
+            #     if not isinstance(client, None):
+            #         self.send_msg(client, message)
+            #     else:
+            #         continue
+            # self.forward_queue.clear()
+
             for client in self.client_conns["connections"]:
-                try:
-                    if (client["conn"].getsockname()[0] != '0.0.0.0'):
-                        self.send_data(client, data)
-                    else:
-                        # dest = (client["ip"], client["port"])
-                        # print(f"[INFO] Finding next best for {dest[0]}:{dest[1]}")
-                        data["dest"] = (client["ip"], client["port"])
-                        dest_state = client["state"]
-                        self.next_best(dest_state, data)
-                except:
-                    # dest = (client["ip"], client["port"])
-                    # print(f"[INFO] Finding next best for {dest[0]}:{dest[1]}")
-                    data["dest"] = (client["ip"], client["port"])
-                    dest_state = client["state"]
-                    self.next_best(dest_state, data)
+                self.send_msg(client, data)
 
             time.sleep(5)
 

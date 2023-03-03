@@ -22,7 +22,7 @@
         },
         {
             "ip": "192.168.56.1",
-            "port": 9999,
+            "port": 9898,
             "state":{
                 "header" : null,
                 "gps_status": null,
@@ -42,7 +42,7 @@
         },
         {
             "ip": "192.168.56.1",
-            "port": 1000,
+            "port": 9999,
             "state":{
                 "header" : null,
                 "gps_status": null,
@@ -62,7 +62,7 @@
         },
         {
             "ip": "192.168.56.1",
-            "port": 9898,
+            "port": 1000,
             "state":{
                 "header" : null,
                 "gps_status": null,
