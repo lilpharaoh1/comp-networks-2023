@@ -44,7 +44,7 @@ class DroneAgent:
         self.client_conns = {"connections":[]}
         self.forward_queue = deque(maxlen=10)
         
-        # sort_server_dests(self.server_dests)
+        sort_server_dests(self.server_dests)
         for ip, port, state in self.server_dests:
             self.client_conns["connections"].append({
                 "conn": socket.socket(socket.AF_INET, socket.SOCK_STREAM),
@@ -88,24 +88,19 @@ class DroneAgent:
     
     def search_for_conns(self):
         while True: 
-            print(f"[CONNECTION] Looking for connections")
+            # print(f"[CONNECTION] Looking for connections")
             for idx, client in enumerate(self.client_conns["connections"]):
                 try:
-
                     ping = 1
                     client["conn"].send(ping.to_bytes(1, 'little'))
                 except:
-                    print("here...")
                     try:
-                        print("about to check distance...")
                         if check_dist(self.state, client["state"]) <= CONNECTION_LIMIT:
-                            print("Distance Checked...")
-                            ip, port, _, _ = self.server_dests[idx]
+                            ip, port, _ = self.server_dests[idx]
                             print(f"[CONNECTION] Searching for {ip}:{port}...")
                             client["conn"].connect((ip, port))
                             print(f"[CONNECTION] Connection made at {ip}:{port}")
                     except:
-                        print("Error checking distance...")
                         pass
             time.sleep(10)
 
@@ -203,25 +198,25 @@ class DroneAgent:
                 "image": image
             }
 
-            # for message in self.forward_queue:
-            #     client = None
-            #     top, bottom = 0, len(self.client_conns["connections"]) - 1
-            #     while (top != bottom):
-            #         mid = (top + bottom) // 2
-            #         if (message["ip"], message["port"]) is \
-            #             (self.client_conns["connections"][mid]["ip"], \
-            #              self.client_conns["connections"][mid]["port"]):
-            #             client = self.client_conns["connections"][mid]
-            #         elif message["port"] < self.client_conns["connections"][mid]["port"]:
-            #             bottom = mid + 1
-            #         else:
-            #             top = mid - 1 
+            for data in self.forward_queue:
+                client = None
+                top, bottom = 0, len(self.client_conns["connections"]) - 1
+                while (top != bottom):
+                    mid = (top + bottom) // 2
+                    if (data["dest"]) is \
+                        (self.client_conns["connections"][mid]["ip"], \
+                         self.client_conns["connections"][mid]["port"]):
+                        client = self.client_conns["connections"][mid]
+                    elif data["dest"][1] < self.client_conns["connections"][mid]["port"]:
+                        bottom = mid + 1
+                    else:
+                        top = mid - 1 
                 
-            #     if not isinstance(client, None):
-            #         self.send_msg(client, message)
-            #     else:
-            #         continue
-            # self.forward_queue.clear()
+                if not isinstance(client, None):
+                    self.send_msg(client, data)
+                else:
+                    continue
+            self.forward_queue.clear()
 
             for client in self.client_conns["connections"]:
                 self.send_msg(client, data)
