@@ -173,7 +173,6 @@ class DroneAgent:
     def send_msg(self, client, data):        
         try:
             if (client["conn"].getsockname()[0] != '0.0.0.0'):
-                # print("Directly connected...")
                 data["dest"] = (client["ip"], client["port"])
                 msg = dumps(data)
                 client["conn"].send(msg)
@@ -182,7 +181,6 @@ class DroneAgent:
                 dest_state = client["state"]
                 self.next_best(dest_state, data)
         except:
-            # print("Hostname Error")
             data["dest"] = (client["ip"], client["port"])
             dest_state = client["state"]
             self.next_best(dest_state, data)
@@ -200,25 +198,19 @@ class DroneAgent:
 
             for data in self.forward_queue:
                 client = None
-                top, bottom = 0, len(self.client_conns["connections"]) - 1
-                while (top != bottom):
-                    mid = (top + bottom) // 2
-                    if (data["dest"]) is \
-                        (self.client_conns["connections"][mid]["ip"], \
-                         self.client_conns["connections"][mid]["port"]):
-                        client = self.client_conns["connections"][mid]
-                    elif data["dest"][1] < self.client_conns["connections"][mid]["port"]:
-                        bottom = mid + 1
-                    else:
-                        top = mid - 1 
+                for entry in self.client_conns["connections"]:
+                    if data["dest"] == (entry["ip"], entry["port"]):
+                        client = entry
+                        break
                 
-                if not isinstance(client, None):
+                if client is not None:
                     self.send_msg(client, data)
                 else:
                     continue
             self.forward_queue.clear()
 
             for client in self.client_conns["connections"]:
+                print("Sending msg")
                 self.send_msg(client, data)
 
             time.sleep(5)
