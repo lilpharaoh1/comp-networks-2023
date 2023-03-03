@@ -12,6 +12,7 @@ from collections import deque
 
 IMAGE_SHAPE = (12, 12)
 CONNECTION_LIMIT = 2 # Meters
+MAX_TRANS_DIST = 20
 
 
 
@@ -117,7 +118,6 @@ class DroneAgent:
                     print("[ERROR] Error with conn.recv")
                 data = loads(data)
                 dest, state, image = data["dest"], data["state"], data["image"]
-                print(f"Packet looking for {dest}...")
                 if (data["dest"] == self.server_addr):
                     # Handle state
                     for client in self.client_conns["connections"]:
@@ -140,6 +140,33 @@ class DroneAgent:
         msg = dumps(data)
         client["conn"].send(msg)
 
+    def next_best(self, dest_state, data):
+        """
+        Greedy BFS to find shortest path -> quick
+        """
+        own_dist = check_dist(self.state, dest_state)
+        next_best = (None, MAX_TRANS_DIST)
+        for client in self.client_conns["connections"]:
+            try:
+                if (client["conn"].getsockname()[0] != '0.0.0.0'):
+                    client_diff = check_dist(client["state"], dest_state)
+                    next_best = (client["conn"], client_diff) if client_diff < next_best[1] else next_best
+            except:
+                pass
+        
+
+        dest = data["dest"] # for debugging
+        if own_dist > next_best[1]:
+            msg = dumps(data)
+            next_best[0].send(msg)
+            # print(f"[INFO] Found next best for {dest[0]}:{dest[1]}")
+        else:
+            # print(f"[LOSS] No path found to {dest[0]}:{dest[1]}:!")
+            pass
+
+            
+                
+
     def spin(self):
         while True:
             # image = np.random.randint(255, size=IMAGE_SHAPE, dtype=np.uint8).tobytes() # Camera Feed
@@ -150,13 +177,22 @@ class DroneAgent:
                 "image": image
             }
 
-
             for client in self.client_conns["connections"]:
                 try:
                     if (client["conn"].getsockname()[0] != '0.0.0.0'):
                         self.send_data(client, data)
+                    else:
+                        # dest = (client["ip"], client["port"])
+                        # print(f"[INFO] Finding next best for {dest[0]}:{dest[1]}")
+                        data["dest"] = (client["ip"], client["port"])
+                        dest_state = client["state"]
+                        self.next_best(dest_state, data)
                 except:
-                    pass 
+                    # dest = (client["ip"], client["port"])
+                    # print(f"[INFO] Finding next best for {dest[0]}:{dest[1]}")
+                    data["dest"] = (client["ip"], client["port"])
+                    dest_state = client["state"]
+                    self.next_best(dest_state, data)
 
             time.sleep(5)
 
