@@ -8,7 +8,7 @@
                     "gps_status": null,
                     "pose": {
                         "latitude": 390.0000,
-                        "longitue": 390.0000,
+                        "longitude": 390.0000,
                         "altitude": 100.0000
                     },
                     "imu": {
@@ -28,7 +28,7 @@
                 "gps_status": null,
                 "pose": {
                     "latitude": 391.00000,
-                    "longitue": 391.00000,
+                    "longitude": 391.00000,
                     "altitude": 101.00000
                 },
                 "imu": {
@@ -48,7 +48,7 @@
                 "gps_status": null,
                 "pose": {
                     "latitude": 392.00000,
-                    "longitue": 392.00000,
+                    "longitude": 392.00000,
                     "altitude": 102.00000
                 },
                 "imu": {
