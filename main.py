@@ -5,7 +5,7 @@ import threading
 import argparse
 import os
 import json
-from PIL import Image
+# from PIL import Image
 from pickle import dumps, loads
 import yaml
 from collections import deque
@@ -223,7 +223,7 @@ if __name__ == '__main__':
 
     SERVER_ADDR = (args.server_ip, args.server_port)
     
-    with open('server_dests.json') as f:
+    with open('rasp-test.json') as f:
         data = json.load(f)
         server_dests = [(agent["ip"], agent["port"], agent["state"]) for agent in data["info"]]
         f.close()

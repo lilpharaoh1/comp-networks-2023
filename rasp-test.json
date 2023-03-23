@@ -1,0 +1,65 @@
+{
+    "info": [
+        {
+            "ip": "10.35.70.6",
+            "port": 9797,
+            "state" :{
+                    "header" : null,
+                    "gps_status": null,
+                    "pose": {
+                        "latitude": 390.0000,
+                        "longitude": 390.0000,
+                        "altitude": 100.0000
+                    },
+                    "imu": {
+                        "x": 1.56784,
+                        "y": 1.00325,
+                        "z": 0.67735,
+                        "w": 0.00000
+                    },
+                    "covariances": [0, 0, 0, 0, 0, 0, 0]
+                    }
+        },
+	{
+            "ip": "10.35.70.26",
+            "port": 9898,
+            "state" :{
+                    "header" : null,
+                    "gps_status": null,
+                    "pose": {
+                        "latitude": 391.0000,
+                        "longitude": 391.0000,
+                        "altitude": 101.0000
+                    },
+                    "imu": {
+                        "x": 1.56784,
+                        "y": 1.00325,
+                        "z": 0.67735,
+                        "w": 0.00000
+                    },
+                    "covariances": [0, 0, 0, 0, 0, 0, 0]
+                    }
+        },
+	{
+            "ip": "10.35.70.6",
+            "port": 9999,
+            "state" :{
+                    "header" : null,
+                    "gps_status": null,
+                    "pose": {
+                        "latitude": 392.0000,
+                        "longitude": 392.0000,
+                        "altitude": 102.0000
+                    },
+                    "imu": {
+                        "x": 1.56784,
+                        "y": 1.00325,
+                        "z": 0.67735,
+                        "w": 0.00000
+                    },
+                    "covariances": [0, 0, 0, 0, 0, 0, 0]
+                    }
+        }
+     	]
+}
+
