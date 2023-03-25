@@ -1,5 +1,5 @@
 import socket
-import time 
+import time
 import numpy as np
 import threading
 import argparse
@@ -11,8 +11,9 @@ import yaml
 from collections import deque
 
 IMAGE_SHAPE = (12, 12)
-CONNECTION_LIMIT = 2 # Meters
+CONNECTION_LIMIT = 2  # Meters
 MAX_TRANS_DIST = 20
+
 
 def sort_server_dests(arr):
     """
@@ -27,6 +28,7 @@ def sort_server_dests(arr):
         if not swapped:
             return
 
+
 def check_dist(state_one, state_two):
     lat_dist = state_one["pose"]["latitude"] - state_two["pose"]["latitude"]
     long_dist = state_one["pose"]["longitude"] - state_two["pose"]["longitude"]
@@ -35,15 +37,16 @@ def check_dist(state_one, state_two):
 
     return dist
 
+
 class DroneAgent:
     def __init__(self, server_addr, server_dests):
         self.server_addr = server_addr
         self.state = None
         self.server_dests = self.parse_server_dests(server_dests)
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.client_conns = {"connections":[]}
+        self.client_conns = {"connections": []}
         self.forward_queue = deque(maxlen=10)
-        
+
         sort_server_dests(self.server_dests)
         for ip, port, state in self.server_dests:
             self.client_conns["connections"].append({
@@ -53,11 +56,10 @@ class DroneAgent:
                 "state": state
             })
 
-
         self.server.bind(self.server_addr)
         self.server.listen(5)
         print(f"[INFO] Listening on {self.server_addr[0]}:{self.server_addr[1]}")
-            
+
         thread = threading.Thread(target=self.open_server)
         thread.start()
 
@@ -85,9 +87,9 @@ class DroneAgent:
             print(f"[INFO] Starting thread for connection {addr}")
             thread = threading.Thread(target=self.client_thread, args=(conn, addr))
             thread.start()
-    
+
     def search_for_conns(self):
-        while True: 
+        while True:
             # print(f"[CONNECTION] Looking for connections")
             for idx, client in enumerate(self.client_conns["connections"]):
                 try:
@@ -124,7 +126,10 @@ class DroneAgent:
                         continue
                     else:
                         print(f"[CONNECTION] Received Packet from {addr}...")
-                except: 
+
+                    conn.send(b'ACK')
+                    print(f"Sent ACK from {addr}...")
+                except:
                     print("[ERROR] Error with conn.recv")
                 data = loads(data)
                 dest, state, image = data["dest"], data["state"], data["image"]
@@ -141,58 +146,77 @@ class DroneAgent:
                     pil_image = Image.fromarray(image.reshape(IMAGE_SHAPE))
                     pil_image.save("data/" + client_name + "/" + str(img_num) + ".png")
                     img_num += 1
+
                 else:
                     self.forward_queue.append(data)
-        print(f"[CONNECTION] Disconnected from {addr}")  
+        print(f"[CONNECTION] Disconnected from {addr}")
 
     def next_best(self, dest_state, data):
         """
         Greedy BFS to find shortest path -> quick
         """
         own_dist = check_dist(self.state, dest_state)
+        finalclient = None
         next_best = (None, MAX_TRANS_DIST)
         for client in self.client_conns["connections"]:
             try:
                 if (client["conn"].getsockname()[0] != '0.0.0.0'):
                     client_diff = check_dist(client["state"], dest_state)
                     next_best = (client["conn"], client_diff) if client_diff < next_best[1] else next_best
+                    finalclient = next_best
             except:
                 pass
-        
 
         # dest = data["dest"] # for debugging
         if own_dist > next_best[1]:
             msg = dumps(data)
             next_best[0].send(msg)
+            finalclient = next_best[0]
             # print(f"[INFO] Found next best for {dest[0]}:{dest[1]}")
         else:
             # print(f"[LOSS] No path found to {dest[0]}:{dest[1]}:!")
             pass
 
+        return finalclient
 
-    def send_msg(self, client, data):        
+
+    def send_msg(self, client, data):
+        finalclient = None
         try:
             if (client["conn"].getsockname()[0] != '0.0.0.0'):
                 data["dest"] = (client["ip"], client["port"])
                 msg = dumps(data)
                 client["conn"].send(msg)
+                finalclient = client["conn"]
             else:
                 data["dest"] = (client["ip"], client["port"])
                 dest_state = client["state"]
-                self.next_best(dest_state, data)
+                finalclient = self.next_best(dest_state, data)
         except:
             data["dest"] = (client["ip"], client["port"])
             dest_state = client["state"]
-            self.next_best(dest_state, data)
-           
+            finalclient = self.next_best(dest_state, data)
+        return finalclient
+
+    def recieveACK(self, clientConn):
+        try:
+            data = clientConn.recv(1024)
+            print("Received ACK: %s" % data.decode('ascii'))
+            print("Recived ACk", clientConn)
+        except:
+            #print(type(clientConn))
+            if clientConn == None:
+                print('No ack recieved')
+            else:
+                print('No ack recieved')
 
     def spin(self):
         while True:
             # image = np.random.randint(255, size=IMAGE_SHAPE, dtype=np.uint8).tobytes() # Camera Feed
-            image = np.random.randint(255, size=IMAGE_SHAPE, dtype=np.uint8) # Camera Feed
+            image = np.random.randint(255, size=IMAGE_SHAPE, dtype=np.uint8)  # Camera Feed
             data = {
-                "dest" : (None, None),
-                "state" : self.state,
+                "dest": (None, None),
+                "state": self.state,
                 "image": image
             }
 
@@ -202,18 +226,21 @@ class DroneAgent:
                     if data["dest"] == (entry["ip"], entry["port"]):
                         client = entry
                         break
-                
+
                 if client is not None:
-                    self.send_msg(client, data)
+                    conn = self.send_msg(client, data)
+                    self.recieveACK(conn)
                 else:
                     continue
             self.forward_queue.clear()
 
             for client in self.client_conns["connections"]:
                 print("Sending msg")
-                self.send_msg(client, data)
+                conn = self.send_msg(client, data)
+                self.recieveACK(conn)
 
             time.sleep(5)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -222,7 +249,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     SERVER_ADDR = (args.server_ip, args.server_port)
-    
+
     with open('server_dests.json') as f:
         data = json.load(f)
         server_dests = [(agent["ip"], agent["port"], agent["state"]) for agent in data["info"]]
