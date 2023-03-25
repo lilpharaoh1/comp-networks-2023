@@ -10,6 +10,12 @@ from pickle import dumps, loads
 import yaml
 from collections import deque
 
+import base64
+import secrets
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
 IMAGE_SHAPE = (12, 12)
 CONNECTION_LIMIT = 2 # Meters
 MAX_TRANS_DIST = 20
@@ -43,6 +49,7 @@ class DroneAgent:
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client_conns = {"connections":[]}
         self.forward_queue = deque(maxlen=10)
+        self.key = self.generate_key()
         
         sort_server_dests(self.server_dests)
         for ip, port, state in self.server_dests:
@@ -65,6 +72,19 @@ class DroneAgent:
         thread.start()
 
         print(f"[INFO] DroneAgent {self.server_addr[0]}:{self.server_addr[1]} finished initiating")
+
+    def generate_key(self):
+        password = b"password"
+        salt = b"somesalt"
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=salt,
+            iterations=480000,
+        )
+        key = base64.urlsafe_b64encode(kdf.derive(password))
+        f = Fernet(key)
+        return f
 
     def parse_server_dests(self, server_dests):
         out = []
@@ -124,25 +144,43 @@ class DroneAgent:
                         continue
                     else:
                         print(f"[CONNECTION] Received Packet from {addr}...")
+
+                        request = secrets.token_hex(16)
+                        encrypted_req = self.key.encrypt(request.encode())
+                        conn.send(encrypted_req)
+                        print("Verifying sender, sending value: ", request)
+                        expected_ans = hex(int(request, 16) + int(request, 16))
+                        print("The expected reply is: ", expected_ans)
+                        encrypted_ans = conn.recv(1024)
+                        ans = self.key.decrypt(encrypted_ans)
+                        print("Received answer: ", ans.decode("ascii"))
+                        if ((ans.decode("ascii")) == expected_ans):
+                            print("Expected answer received")
+
+                            data = loads(data)
+                            dest, state, image = data["dest"], data["state"], data["image"]
+                            if (data["dest"] == self.server_addr):
+                                # Handle state
+                                for client in self.client_conns["connections"]:
+                                    if (client["ip"], client["port"]) is dest:
+                                        client["state"] = state
+                                        break
+                                with open("data/" + client_name + "/" + str(img_num) + ".yml", 'w') as outfile:
+                                    yaml.dump(state, outfile, default_flow_style=False)
+
+                                # Handle image
+                                pil_image = Image.fromarray(image.reshape(IMAGE_SHAPE))
+                                pil_image.save("data/" + client_name + "/" + str(img_num) + ".png")
+                                img_num += 1
+                            else:
+                                self.forward_queue.append(data)
+
+                        else:
+                            print("Wrong answer received, packet ignored")
+
                 except: 
                     print("[ERROR] Error with conn.recv")
-                data = loads(data)
-                dest, state, image = data["dest"], data["state"], data["image"]
-                if (data["dest"] == self.server_addr):
-                    # Handle state
-                    for client in self.client_conns["connections"]:
-                        if (client["ip"], client["port"]) is dest:
-                            client["state"] = state
-                            break
-                    with open("data/" + client_name + "/" + str(img_num) + ".yml", 'w') as outfile:
-                        yaml.dump(state, outfile, default_flow_style=False)
-
-                    # Handle image
-                    pil_image = Image.fromarray(image.reshape(IMAGE_SHAPE))
-                    pil_image.save("data/" + client_name + "/" + str(img_num) + ".png")
-                    img_num += 1
-                else:
-                    self.forward_queue.append(data)
+                
         print(f"[CONNECTION] Disconnected from {addr}")  
 
     def next_best(self, dest_state, data):
@@ -165,6 +203,16 @@ class DroneAgent:
             msg = dumps(data)
             next_best[0].send(msg)
             # print(f"[INFO] Found next best for {dest[0]}:{dest[1]}")
+
+            print("Sent packet, waiting for response")
+            encrypted_req = client["conn"].recv(1024)
+            request = self.key.decrypt(encrypted_req)
+            print("Received response: ", request.decode("ascii"))
+            ans = hex(int((request.decode("ascii")), 16) + int((request.decode("ascii")), 16))
+            print("Sending answer: ", ans)
+            encrypted_ans = self.key.encrypt(ans.encode())
+            client["conn"].send(encrypted_ans)
+
         else:
             # print(f"[LOSS] No path found to {dest[0]}:{dest[1]}:!")
             pass
@@ -176,6 +224,16 @@ class DroneAgent:
                 data["dest"] = (client["ip"], client["port"])
                 msg = dumps(data)
                 client["conn"].send(msg)
+
+                print("Sent packet, waiting for response")
+                encrypted_req = client["conn"].recv(1024)
+                request = self.key.decrypt(encrypted_req)
+                print("Received response: ", request.decode("ascii"))
+                ans = hex(int((request.decode("ascii")), 16) + int((request.decode("ascii")), 16))
+                print("Sending answer: ", ans)
+                encrypted_ans = self.key.encrypt(ans.encode())
+                client["conn"].send(encrypted_ans)
+
             else:
                 data["dest"] = (client["ip"], client["port"])
                 dest_state = client["state"]
