@@ -7,10 +7,60 @@ on the command line.
 
 
 -- main.py --
-Identical to previous code, with following additions: A public key was generated using the fernet method from the "cryptography" library. This key is used to encrypt and decrypt messages sent amongst the drones. Example: Drone A will send a packet to Drone B. Drone B, upon receiving this packet, will send back an encrypted large hexadecimal number generated using the "secrets" library. Drone A will decrypt this number and perform mathematical operations on it (for now, the number is simply added to itself once). Drone A will then send their result to Drone B, who will have performed the same operations on the number. Drone B will compare the two results. If they match, Drone B will accept and handle the packet. If they don't match the packet will be ignored.
+Identical to previous code, with the following additions: 
+
+A public key was generated using the fernet method from the "cryptography" library. (defined in DroneAgent and assigned to self.key):
+
+def generate_key(self):
+        password = b"password"
+        salt = b"somesalt"
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=salt,
+            iterations=480000,
+        )
+        key = base64.urlsafe_b64encode(kdf.derive(password))
+        f = Fernet(key)
+        return f
+
+This key is used to encrypt and decrypt messages sent amongst the drones. Example: Drone A will send a packet to Drone B. Drone B, upon receiving this packet, will send back an encrypted large hexadecimal number generated using the "secrets" library. Drone A will decrypt this number and perform mathematical operations on it (for now, the number is simply added to itself once). Drone A will then send their result to Drone B, who will have performed the same operations on the number. Drone B will compare the two results. If they match, Drone B will accept and handle the packet. If they don't match the packet will be ignored.
+
+(in client_thread()):
+
+# Drone B side
+request = secrets.token_hex(16)
+encrypted_req = self.key.encrypt(request.encode())
+conn.send(encrypted_req)
+print("Verifying sender, sending value: ", request)
+expected_ans = hex(int(request, 16) + int(request, 16))
+print("The expected reply is: ", expected_ans)
+encrypted_ans = conn.recv(1024)
+ans = self.key.decrypt(encrypted_ans)
+print("Received answer: ", ans.decode("ascii"))
+if ((ans.decode("ascii")) == expected_ans):
+	print("Expected answer received")
+	# handle packet using original code
+else
+	print("Wrong answer received, packet ignored")
+
+-----
+
+(in send_msg() & next_best()):
+
+# Drone A side
+print("Sent packet, waiting for response")
+encrypted_req = client["conn"].recv(1024)
+request = self.key.decrypt(encrypted_req)
+print("Received response: ", request.decode("ascii"))
+ans = hex(int((request.decode("ascii")), 16) + int((request.decode("ascii")), 16))
+print("Sending answer: ", ans)
+encrypted_ans = self.key.encrypt(ans.encode())
+client["conn"].send(encrypted_ans)
+
 
 -- main_bad.py --
-Identical to above main.py, but the mathematical operations are different to the "good" drones (number is multiplied by itself). This means that all packets sent by this drone will be ignored by all drones that receive it.
+Identical to above main.py, but the mathematical operations are different to the "good" drones (number is multiplied by itself). This means that all packets sent by this drone should be ignored by all drones that receive it.
 
 
 -- Issues --
@@ -19,3 +69,5 @@ Identical to above main.py, but the mathematical operations are different to the
 * Touched on above, due to all the different data being sent by the drones, occasionally a request or response message will be missed as the recv() function simply reads in all data, therefore a packet may be mistaken as a message or vice versa. Not sure if possible, but maybe check if the data received is in hexadecimal format, and if so encrypt/decrypt, otherwise handle as packet. (Only 3 instances were used to test the code, the problem may be even worse once more drones are added)
 
 * Mathematical operations performed on numbers is very simple, making it easy to guess the correct result. More difficult operations should be implemented.
+
+* I am not entirely sure if the encryption/decryption is happening at the places they should be - I'm not certain where the sending/receiving data is going on exactly, so the functions may not be happening where they're supposed to be.
