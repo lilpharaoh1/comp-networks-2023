@@ -1,5 +1,5 @@
 import socket
-import time 
+import time
 import numpy as np
 import threading
 import argparse
@@ -9,6 +9,8 @@ from PIL import Image
 from pickle import dumps, loads
 import yaml
 from collections import deque
+import networkx as nx
+from networkx.algorithms.shortest_paths.dense import johnson
 
 IMAGE_SHAPE = (12, 12)
 CONNECTION_LIMIT = 2 # Meters
@@ -43,6 +45,10 @@ class DroneAgent:
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client_conns = {"connections":[]}
         self.forward_queue = deque(maxlen=10)
+
+        self.graph = nx.DiGraph()
+        for ip, port, state in self.server_dests:
+            self.graph.add_node((ip, port), state=state)
         
         sort_server_dests(self.server_dests)
         for ip, port, state in self.server_dests:
@@ -65,6 +71,23 @@ class DroneAgent:
         thread.start()
 
         print(f"[INFO] DroneAgent {self.server_addr[0]}:{self.server_addr[1]} finished initiating")
+        self.calculate_shortest_paths()
+
+    
+
+    def calculate_shortest_paths(self):
+        #Calculate all-pairs shortest paths using Johnson's Algorithm to update graph edges
+        self.graph.remove_edges_from(list(self.graph.edges()))
+        for idx, client in enumerate(self.client_conns["connections"]):
+            if check_dist(self.state, client["state"]) <= CONNECTION_LIMIT:
+                ip, port, _ = self.server_dests[idx]
+                weight = check_dist(self.state, client["state"])
+                self.graph.add_edge(self.server_addr, (ip, port), weight=weight)
+
+        # Calculate all-pairs shortest paths using Johnson's Algorithm
+        self.shortest_paths = johnson(self.graph)
+
+
 
     def parse_server_dests(self, server_dests):
         out = []
@@ -102,6 +125,7 @@ class DroneAgent:
                             print(f"[CONNECTION] Connection made at {ip}:{port}")
                     except:
                         pass
+            self.calculate_shortest_paths()
             time.sleep(10)
 
     def client_thread(self, conn, addr):
@@ -145,29 +169,28 @@ class DroneAgent:
                     self.forward_queue.append(data)
         print(f"[CONNECTION] Disconnected from {addr}")  
 
-    def next_best(self, dest_state, data):
-        """
-        Greedy BFS to find shortest path -> quick
-        """
-        own_dist = check_dist(self.state, dest_state)
-        next_best = (None, MAX_TRANS_DIST)
-        for client in self.client_conns["connections"]:
-            try:
-                if (client["conn"].getsockname()[0] != '0.0.0.0'):
-                    client_diff = check_dist(client["state"], dest_state)
-                    next_best = (client["conn"], client_diff) if client_diff < next_best[1] else next_best
-            except:
-                pass
-        
+ def route_message(self, dest_addr, data):
+    """
+    Route the message to the next best node according to Johnson's Algorithm.
+    """
+    if dest_addr not in self.shortest_paths[self.server_addr]:
+        print(f"[LOSS] No path found to {dest_addr[0]}:{dest_addr[1]}:!")
+        return
 
-        # dest = data["dest"] # for debugging
-        if own_dist > next_best[1]:
-            msg = dumps(data)
-            next_best[0].send(msg)
-            # print(f"[INFO] Found next best for {dest[0]}:{dest[1]}")
-        else:
-            # print(f"[LOSS] No path found to {dest[0]}:{dest[1]}:!")
-            pass
+    next_addr = self.shortest_paths[self.server_addr][dest_addr]["path"][1]
+    next_conn = None
+    for client in self.client_conns["connections"]:
+        if (client["ip"], client["port"]) == next_addr:
+            next_conn = client["conn"]
+            break
+
+    if next_conn is not None:
+        msg = dumps(data)
+        next_conn.send(msg)
+        # print(f"[INFO] Routed message for {dest_addr[0]}:{dest_addr[1]}")
+    else:
+        print(f"[LOSS] No connection found for the next node {next_addr[0]}:{next_addr[1]}:!")
+
 
 
     def send_msg(self, client, data):        
@@ -179,11 +202,13 @@ class DroneAgent:
             else:
                 data["dest"] = (client["ip"], client["port"])
                 dest_state = client["state"]
-                self.next_best(dest_state, data)
+                self.route_message((client["ip"], client["port"]), data)
+
         except:
             data["dest"] = (client["ip"], client["port"])
             dest_state = client["state"]
-            self.next_best(dest_state, data)
+            self.route_message((client["ip"], client["port"]), data)
+
            
 
     def spin(self):
