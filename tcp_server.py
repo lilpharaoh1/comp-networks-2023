@@ -1,12 +1,12 @@
 import socket
 import threading
 import numpy as np
-from matplotlib import pyplot as plt
+#from matplotlib import pyplot as plt
 import time
 
 
 SERVER = socket.gethostbyname(socket.gethostname())
-PORT = 9797
+PORT = 33300
 
 
 def client_thread(conn, addr):
