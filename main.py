@@ -1,8 +1,6 @@
+import random
 import socket
 import time
-import uuid
-from random import randint
-
 import numpy as np
 import threading
 import argparse
@@ -40,7 +38,6 @@ def check_dist(state_one, state_two):
 
     return dist
 
-
 class DroneAgent:
     def __init__(self, server_addr, server_dests):
         self.server_addr = server_addr
@@ -49,7 +46,8 @@ class DroneAgent:
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client_conns = {"connections": []}
         self.forward_queue = deque(maxlen=10)
-        # self.forward_queue_ack = deque(maxlen=10)
+        self.forward_queue_ack = deque(maxlen=10)
+        self.ack_trace = {}
 
         sort_server_dests(self.server_dests)
         for ip, port, state in self.server_dests:
@@ -62,6 +60,7 @@ class DroneAgent:
 
         self.server.bind(self.server_addr)
         self.server.listen(5)
+
         print(f"[INFO] Listening on {self.server_addr[0]}:{self.server_addr[1]}")
 
         thread = threading.Thread(target=self.open_server)
@@ -115,7 +114,7 @@ class DroneAgent:
             # image_handle, image_idx = np.zeros((32, 32), np.int8), 0
             print(f"[CONNECTION] Connection received at {addr}")
 
-            client_name = str(addr[0]) + '_' + str(addr[1])
+            client_name = str(addr[0]) + '_' + str(addr[1])# i beleive this shouldnot be changes bcz it represents one connection so should be this only
             if not os.path.isdir('data'):
                 os.mkdir('data')
             if str(client_name) not in os.listdir('data'):
@@ -134,15 +133,14 @@ class DroneAgent:
                 except:
                     print("[ERROR] Error with conn.recv")
                 data = loads(data)
-                dest, state, image, img_num = data["dest"], data["state"], data["image"], data["image_seq"]
+                dest, state, image, img_num, server_add = data["dest"], data["state"], data["image"], data["image_seq"], data["server_add"]
                 ack = {
                     'ACK': True,
-                    'Connection': addr,
                     'ImageNo': img_num,
-                    'ServerAddr': self.server_addr[1],
-                    'StoragePath': "data/" + client_name + "/" + str(self.server_addr[1]) + "_" + str(img_num) + ".png"
+                    'ServerAddr': self.server_addr[1],  # this is a server address from where the file is coming from
+                    'Connection': str(conn),
+                    'StoragePath': "data/" + client_name + "/" + str(server_add[1]) + "_" + str(img_num) + ".png"
                 }
-                print(f"Sent ACK from {addr}...img {img_num}")
                 acks = dumps(ack)
                 conn.send(acks)
                 if (data["dest"] == self.server_addr):
@@ -151,18 +149,20 @@ class DroneAgent:
                         if (client["ip"], client["port"]) is dest:
                             client["state"] = state
                             break
-                    with open("data/" + client_name + "/" + str(self.server_addr[1]) + "_" + str(img_num) + ".yml",
+                    with open("data/" + client_name + "/" + str(server_add[1]) + "_" + str(img_num) + ".yml",
                               'w') as outfile:
                         yaml.dump(state, outfile, default_flow_style=False)
 
                     # Handle image
                     pil_image = Image.fromarray(image.reshape(IMAGE_SHAPE))
-                    pil_image.save("data/" + client_name + "/" + str(self.server_addr[1]) + "_" + str(img_num) + ".png")
+                    pil_image.save("data/" + client_name + "/" + str(server_add[1]) + "_" + str(img_num) + ".png")
+                    # img_num += 1
 
+                    # print(f"Sent ACK from {addr}...")
 
                 else:
                     self.forward_queue.append(data)
-                    # self.forward_queue_ack.append(ack)
+                    self.forward_queue_ack.append(ack)
                     # print(self.forward_queue)
                     # print(self.forward_queue_ack)
         print(f"[CONNECTION] Disconnected from {addr}")
@@ -215,25 +215,30 @@ class DroneAgent:
     def recieveACK(self, clientConn):
         try:
             data = clientConn.recv(1024)
-            print("Received ACK: %s" % loads(data))
+            data = loads(data)
+            print("Received ACK: %s" % data)
+            key = data['image_seq']
+            if key in self.ack_trace:
+                self.ack_trace.pop(key)
         except:
-            # print(type(clientConn))
-            if clientConn == None:
-                print('No ack recieved')
-            else:
-                print('No ack recieved')
+            print('waiting Ack')
+
+    def register_send_msg(self,client,data):
+        key = data['image_seq']
+        self.ack_trace[key] = [client,data,'False']
+
 
     def spin(self):
-        img = 0
         while True:
             # image = np.random.randint(255, size=IMAGE_SHAPE, dtype=np.uint8).tobytes() # Camera Feed
             image = np.random.randint(255, size=IMAGE_SHAPE, dtype=np.uint8)  # Camera Feed
-            img = uuid.uuid4().hex
+            img = ''.join(random.choice('0123456789abcdef') for i in range(16))
             data = {
                 "dest": (None, None),
                 "state": self.state,
                 "image": image,
-                "image_seq": img
+                "image_seq": img,
+                "server_add": self.server_addr
             }
 
             for data in self.forward_queue:
@@ -245,28 +250,26 @@ class DroneAgent:
 
                 if client is not None:
                     conn = self.send_msg(client, data)
-                    if conn != None:
+                    self.register_send_msg(client, data)
+                    if conn is not None:
                         self.recieveACK(conn)
                 else:
                     continue
             self.forward_queue.clear()
 
-            # for ack in self.forward_queue_ack:
-            #     pathCheck = ack["StoragePath"]
-            #     client = None
-            #     for client in self.client_conns["connections"]:
-            #         if (client["conn"].getsockname()[0] != '0.0.0.0'):
-            #             if os.path.exists(pathCheck):
-            #                 print("packet pahunch gyo")
-            #                 self.recieveACK(client["conn"])
-            #                 print("packet pahunch gyo")
-            # self.forward_queue.clear()
-
-
             for client in self.client_conns["connections"]:
                 print("Sending msg")
                 conn = self.send_msg(client, data)
+                self.register_send_msg(client, data)
                 if conn != None:
+                    self.recieveACK(conn)
+            time.sleep(10)
+            for ack in self.ack_trace:
+                client_conn = self.ack_trace[ack][0]
+                data = self.ack_trace[ack][1]
+                conn = self.send_msg(client_conn, data)
+                if conn is not None:
+                    print("Missing Ack : Resending image" + str(ack))
                     self.recieveACK(conn)
 
             time.sleep(5)
