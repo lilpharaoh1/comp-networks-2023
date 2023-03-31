@@ -11,6 +11,12 @@ from pickle import dumps, loads
 import yaml
 from collections import deque
 
+import base64
+import secrets
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
 IMAGE_SHAPE = (12, 12)
 CONNECTION_LIMIT = 2  # Meters
 MAX_TRANS_DIST = 20
@@ -46,9 +52,9 @@ class DroneAgent:
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client_conns = {"connections": []}
         self.forward_queue = deque(maxlen=10)
+        self.key = self.generate_key()
         self.forward_queue_ack = deque(maxlen=10)
         self.ack_trace = {}
-
 
         sort_server_dests(self.server_dests)
         for ip, port, state in self.server_dests:
@@ -71,6 +77,19 @@ class DroneAgent:
         thread.start()
 
         print(f"[INFO] DroneAgent {self.server_addr[0]}:{self.server_addr[1]} finished initiating")
+
+    def generate_key(self):
+        password = b"password"
+        salt = b"somesalt"
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=salt,
+            iterations=480000,
+        )
+        key = base64.urlsafe_b64encode(kdf.derive(password))
+        f = Fernet(key)
+        return f
 
     def parse_server_dests(self, server_dests):
         out = []
@@ -130,39 +149,53 @@ class DroneAgent:
                     else:
                         print(f"[CONNECTION] Received Packet from {addr}...")
 
-                except:
-                    print("[ERROR] Error with conn.recv")
-                data = loads(data)
-                dest, state, image, img_num, server_add = data["dest"], data["state"], data["image"], data["image_seq"], data["server_add"]
-                ack = {
-                    'ACK': True,
-                    'ImageNo': img_num,
-                    'ServerAddr': self.server_addr[1],  # this is a server address from where the file is coming from
-                    'Connection': str(conn),
-                    'StoragePath': "data/" + client_name + "/" + str(server_add[1]) + "_" + str(img_num) + ".png"
-                }
-                acks = dumps(ack)
-                conn.send(acks)
-                if (data["dest"] == self.server_addr):
-                    # Handle state
-                    for client in self.client_conns["connections"]:
-                        if (client["ip"], client["port"]) is dest:
-                            client["state"] = state
-                            break
-                    with open("data/" + client_name + "/" + str(server_add[1]) + "_" + str(img_num) + ".yml",
-                              'w') as outfile:
-                        yaml.dump(state, outfile, default_flow_style=False)
+                        request = secrets.token_hex(16)
+                        encrypted_req = self.key.encrypt(request.encode())
+                        conn.send(encrypted_req)
+                        print("Verifying sender, sending value: ", request)
+                        expected_ans = hex(int(request, 16) + int(request, 16))
+                        print("The expected reply is: ", expected_ans)
+                        encrypted_ans = conn.recv(1024)
+                        ans = self.key.decrypt(encrypted_ans)
+                        print("Received answer: ", ans.decode("ascii"))
+                        if ((ans.decode("ascii")) == expected_ans):
+                            print("Expected answer received")
 
-                    # Handle image
-                    save_name = "data/" + client_name + "/" + str(server_add[1]) + "_" + str(img_num) + ".png"
-                    np.save(save_name, image)
-                    #img_num += 1
-                else:
-                    self.forward_queue.append(data)
-                    self.forward_queue_ack.append(ack)
-                    # print(self.forward_queue)
-                    # print(self.forward_queue_ack)
-        print(f"[CONNECTION] Disconnected from {addr}")
+                            data = loads(data)
+                            dest, state, image, img_num, server_add = data["dest"], data["state"], data["image"], data["image_seq"], data["server_add"]
+                            ack = {
+                                'ACK': True,
+                                'ImageNo': img_num,
+                                'ServerAddr': self.server_addr[1],  # this is a server address from where the file is coming from
+                                'Connection': str(conn),
+                                'StoragePath': "data/" + client_name + "/" + str(server_add[1]) + "_" + str(img_num) + ".png"
+                            }
+                            acks = dumps(ack)
+                            conn.send(acks)
+                            if (data["dest"] == self.server_addr):
+                                # Handle state
+                                for client in self.client_conns["connections"]:
+                                    if (client["ip"], client["port"]) is dest:
+                                        client["state"] = state
+                                        break
+                                with open("data/" + client_name + "/" + str(server_add[1]) + "_" + str(img_num) + ".yml",
+                                          'w') as outfile:
+                                    yaml.dump(state, outfile, default_flow_style=False)
+
+                                # Handle image
+                                save_name = "data/" + client_name + "/" + str(server_add[1]) + "_" + str(img_num) + ".png"
+                                np.save(save_name, image)
+                                #img_num += 1
+                            else:
+                                self.forward_queue.append(data)
+                                self.forward_queue_ack.append(ack)
+                                # print(self.forward_queue)
+                                # print(self.forward_queue_ack)
+
+                except: 
+                    print("[ERROR] Error with conn.recv")
+        print(f"[CONNECTION] Disconnected from {addr}")  
+
 
     def next_best(self, dest_state, data):
         """
@@ -189,6 +222,16 @@ class DroneAgent:
                 pass
                 #print("[LOSS] Next best not connected")
             # print(f"[INFO] Found next best for {dest[0]}:{dest[1]}")
+
+            print("Sent packet, waiting for response")
+            encrypted_req = client["conn"].recv(1024)
+            request = self.key.decrypt(encrypted_req)
+            print("Received response: ", request.decode("ascii"))
+            ans = hex(int((request.decode("ascii")), 16) + int((request.decode("ascii")), 16))
+            print("Sending answer: ", ans)
+            encrypted_ans = self.key.encrypt(ans.encode())
+            client["conn"].send(encrypted_ans)
+
         else:
             # print(f"[LOSS] No path found to {dest[0]}:{dest[1]}:!")
             pass
@@ -203,6 +246,15 @@ class DroneAgent:
                 data["dest"] = (client["ip"], client["port"])
                 msg = dumps(data)
                 client["conn"].send(msg)
+                print("Sent packet, waiting for response")
+                encrypted_req = client["conn"].recv(1024)
+                request = self.key.decrypt(encrypted_req)
+                print("Received response: ", request.decode("ascii"))
+                ans = hex(int((request.decode("ascii")), 16) + int((request.decode("ascii")), 16))
+                print("Sending answer: ", ans)
+                encrypted_ans = self.key.encrypt(ans.encode())
+                client["conn"].send(encrypted_ans)
+
                 finalclient = client["conn"]
             else:
                 data["dest"] = (client["ip"], client["port"])
