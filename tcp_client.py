@@ -2,12 +2,13 @@ import socket
 import time
 import numpy as np
 
-SERVER = "192.168.56.1"
-PORT = 9797
+SERVER = "10.35.70.26"
+PORT = 33300
 
 client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+print("connecting....")
 client.connect((SERVER, PORT))
-
+print("connected....")
 # file = open('aerial_sample.jpg', 'rb')
 # image = file.read(2048)
 i = 0

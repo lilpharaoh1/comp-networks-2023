@@ -6,7 +6,7 @@ import threading
 import argparse
 import os
 import json
-from PIL import Image
+# from PIL import Image
 from pickle import dumps, loads
 import yaml
 from collections import deque
@@ -48,6 +48,7 @@ class DroneAgent:
         self.forward_queue = deque(maxlen=10)
         self.forward_queue_ack = deque(maxlen=10)
         self.ack_trace = {}
+
 
         sort_server_dests(self.server_dests)
         for ip, port, state in self.server_dests:
@@ -101,9 +102,8 @@ class DroneAgent:
                 except:
                     try:
                         if check_dist(self.state, client["state"]) <= CONNECTION_LIMIT:
-                            ip, port, _ = self.server_dests[idx]
-                            print(f"[CONNECTION] Searching for {ip}:{port}...")
-                            client["conn"].connect((ip, port))
+                            print(f"[CONNECTION] Searching for {client['ip']}:{client['port']}...")
+                            client["conn"].connect((client['ip'], client['port']))
                             print(f"[CONNECTION] Connection made at {ip}:{port}")
                     except:
                         pass
@@ -125,7 +125,7 @@ class DroneAgent:
                 try:
                     data = conn.recv(4096)
                     if data == int(1).to_bytes(1, 'little'):
-                        print("[CONNECTION] Ping received")
+                        #print("[CONNECTION] Ping received")
                         continue
                     else:
                         print(f"[CONNECTION] Received Packet from {addr}...")
@@ -154,12 +154,9 @@ class DroneAgent:
                         yaml.dump(state, outfile, default_flow_style=False)
 
                     # Handle image
-                    pil_image = Image.fromarray(image.reshape(IMAGE_SHAPE))
-                    pil_image.save("data/" + client_name + "/" + str(server_add[1]) + "_" + str(img_num) + ".png")
-                    # img_num += 1
-
-                    # print(f"Sent ACK from {addr}...")
-
+                    save_name = "data/" + client_name + "/" + str(server_add[1]) + "_" + str(img_num) + ".png"
+                    np.save(save_name, image)
+                    img_num += 1
                 else:
                     self.forward_queue.append(data)
                     self.forward_queue_ack.append(ack)
@@ -196,6 +193,7 @@ class DroneAgent:
 
     def send_msg(self, client, data):
         finalclient = None
+
         try:
             if (client["conn"].getsockname()[0] != '0.0.0.0'):
                 data["dest"] = (client["ip"], client["port"])
@@ -272,18 +270,20 @@ class DroneAgent:
                     print("Missing Ack : Resending image" + str(ack))
                     self.recieveACK(conn)
 
+
             time.sleep(5)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-s', '--server-ip', default=socket.gethostbyname(socket.gethostname()), type=str)
-    parser.add_argument('-p', '--server-port', default=9797, type=int)
+    parser.add_argument('-p', '--server-port', default=33200, type=int)
     args = parser.parse_args()
 
     SERVER_ADDR = (args.server_ip, args.server_port)
 
-    with open('server_dests.json') as f:
+    
+    with open('rasp-test.json') as f:
         data = json.load(f)
         server_dests = [(agent["ip"], agent["port"], agent["state"]) for agent in data["info"]]
         f.close()
