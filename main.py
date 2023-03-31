@@ -156,7 +156,7 @@ class DroneAgent:
                     # Handle image
                     save_name = "data/" + client_name + "/" + str(server_add[1]) + "_" + str(img_num) + ".png"
                     np.save(save_name, image)
-                    img_num += 1
+                    #img_num += 1
                 else:
                     self.forward_queue.append(data)
                     self.forward_queue_ack.append(ack)
@@ -181,9 +181,13 @@ class DroneAgent:
 
         # dest = data["dest"] # for debugging
         if own_dist > next_best[1]:
-            msg = dumps(data)
-            next_best[0].send(msg)
-            finalclient = next_best[0]
+            msg = dumps(data )
+            try:
+                next_best[0].send(msg)
+                finalclient = next_best[0]
+            except:
+                pass
+                #print("[LOSS] Next best not connected")
             # print(f"[INFO] Found next best for {dest[0]}:{dest[1]}")
         else:
             # print(f"[LOSS] No path found to {dest[0]}:{dest[1]}:!")
@@ -214,12 +218,13 @@ class DroneAgent:
         try:
             data = clientConn.recv(1024)
             data = loads(data)
-            print("Received ACK: %s" % data)
+            print(f"[ACK] Received ACK for {data['ImageNo']}")
             key = data['image_seq']
             if key in self.ack_trace:
                 self.ack_trace.pop(key)
         except:
-            print('waiting Ack')
+            #print('waiting Ack')
+            pass
 
     def register_send_msg(self,client,data):
         key = data['image_seq']
@@ -256,7 +261,7 @@ class DroneAgent:
             self.forward_queue.clear()
 
             for client in self.client_conns["connections"]:
-                print("Sending msg")
+                #print("Sending msg")
                 conn = self.send_msg(client, data)
                 self.register_send_msg(client, data)
                 if conn != None:
