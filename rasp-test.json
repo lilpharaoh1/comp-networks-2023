@@ -2,7 +2,7 @@
     "info": [
         {
             "ip": "10.35.70.6",
-            "port": 33200,
+            "port": 33206,
             "state" :{
                     "header" : null,
                     "gps_status": null,
@@ -22,7 +22,7 @@
         },
 	{
             "ip": "10.35.70.26",
-            "port": 33203,
+            "port": 33213,
             "state" :{
                     "header" : null,
                     "gps_status": null,

@@ -16,10 +16,12 @@ import secrets
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.backends import default_backend
 
 IMAGE_SHAPE = (12, 12)
 CONNECTION_LIMIT = 2  # Meters
 MAX_TRANS_DIST = 20
+ACK_TIMER = 20
 
 
 def sort_server_dests(arr):
@@ -53,7 +55,7 @@ class DroneAgent:
         self.client_conns = {"connections": []}
         self.forward_queue = deque(maxlen=10)
         self.key = self.generate_key()
-        self.forward_queue_ack = deque(maxlen=10)
+        self.ack_queue = deque(maxlen=10)
         self.ack_trace = {}
 
         sort_server_dests(self.server_dests)
@@ -81,11 +83,13 @@ class DroneAgent:
     def generate_key(self):
         password = b"password"
         salt = b"somesalt"
+        backend = default_backend()
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,
             salt=salt,
             iterations=480000,
+            backend=backend
         )
         key = base64.urlsafe_b64encode(kdf.derive(password))
         f = Fernet(key)
@@ -117,6 +121,7 @@ class DroneAgent:
             for idx, client in enumerate(self.client_conns["connections"]):
                 try:
                     ping = 1
+                    print(f"[CONNECTION] Sending ping to {client['ip']}:{client['port']}")
                     client["conn"].send(ping.to_bytes(1, 'little'))
                 except:
                     try:
@@ -138,8 +143,7 @@ class DroneAgent:
                 os.mkdir('data')
             if str(client_name) not in os.listdir('data'):
                 os.mkdir('data/' + client_name)
-            # img_num = 0
-            # seq = 0
+            key = self.generate_key()
             while True:
                 try:
                     data = conn.recv(4096)
@@ -149,51 +153,56 @@ class DroneAgent:
                     else:
                         print(f"[CONNECTION] Received Packet from {addr}...")
 
-                        request = secrets.token_hex(16)
-                        encrypted_req = self.key.encrypt(request.encode())
-                        conn.send(encrypted_req)
-                        print("Verifying sender, sending value: ", request)
-                        expected_ans = hex(int(request, 16) + int(request, 16))
-                        print("The expected reply is: ", expected_ans)
-                        encrypted_ans = conn.recv(1024)
-                        ans = self.key.decrypt(encrypted_ans)
-                        print("Received answer: ", ans.decode("ascii"))
-                        if ((ans.decode("ascii")) == expected_ans):
-                            print("Expected answer received")
+                        # request = secrets.token_hex(16)
+                        # encrypted_req = key.encrypt(request.encode())
+                        # conn.send(encrypted_req)
+                        # print("Verifying sender, sending value: ", request)
+                        # expected_ans = hex(int(request, 16) + int(request, 16))
+                        # print("The expected reply is: ", expected_ans)
+                        # encrypted_ans = conn.recv(1024)
+                        # print("Encrypted Ans : ", encrypted_ans)
+                        # try:
+                        #     print(ans)
+                        #     ans = key.decrypt(encrypted_ans)
+                        # except:
+                        #     print("decrypt error")
+                        #     break
+                        # print("Received answer: ", ans.decode("ascii"))
+                        # if ((ans.decode("ascii")) == expected_ans):
+                        #     print("Expected answer received")
 
-                            data = loads(data)
-                            dest, state, image, img_num, server_add = data["dest"], data["state"], data["image"], data["image_seq"], data["server_add"]
-                            ack = {
-                                'ACK': True,
-                                'ImageNo': img_num,
-                                'ServerAddr': self.server_addr[1],  # this is a server address from where the file is coming from
-                                'Connection': str(conn),
-                                'StoragePath': "data/" + client_name + "/" + str(server_add[1]) + "_" + str(img_num) + ".png"
-                            }
-                            acks = dumps(ack)
-                            conn.send(acks)
-                            if (data["dest"] == self.server_addr):
-                                # Handle state
-                                for client in self.client_conns["connections"]:
-                                    if (client["ip"], client["port"]) is dest:
-                                        client["state"] = state
-                                        break
-                                with open("data/" + client_name + "/" + str(server_add[1]) + "_" + str(img_num) + ".yml",
-                                          'w') as outfile:
-                                    yaml.dump(state, outfile, default_flow_style=False)
+                        data = loads(data)
+                        source, dest, ack, img_num, state, image = data["source"], data["dest"], data["ACK"], data["image_seq"], data["state"], data["image"]
+                        if ack:
+                            print("[ACK] Received ACK...")
+                            self.ack_trace.pop(img_num)
+                            continue
+                        if (data["dest"] == self.server_addr):
+                            # Handle state
+                            for client in self.client_conns["connections"]:
+                                if (client["ip"], client["port"]) is dest:
+                                    client["state"] = state
+                                    break
+                            with open("data/" + client_name + "/" + str(source[1]) + "_" + str(img_num) + ".yml",
+                                        'w') as outfile:
+                                yaml.dump(state, outfile, default_flow_style=False)
 
-                                # Handle image
-                                save_name = "data/" + client_name + "/" + str(server_add[1]) + "_" + str(img_num) + ".png"
-                                np.save(save_name, image)
-                                #img_num += 1
-                            else:
-                                self.forward_queue.append(data)
-                                self.forward_queue_ack.append(ack)
-                                # print(self.forward_queue)
-                                # print(self.forward_queue_ack)
+                            # Handle image
+                            save_name = "data/" + client_name + "/" + str(source[1]) + "_" + str(img_num) + ".png"
+                            np.save(save_name, image)
+                            tmp = data["source"]
+                            data["source"] = data["dest"]
+                            data["dest"] = tmp
+                            data["ACK"] = True
+                            self.ack_queue.append(data)
+                        else:
+                            self.forward_queue.append(data)
+                        # else:
+                        #     print("Malicious")
 
-                except: 
+                except:
                     print("[ERROR] Error with conn.recv")
+                    break
         print(f"[CONNECTION] Disconnected from {addr}")  
 
 
@@ -214,26 +223,17 @@ class DroneAgent:
 
         # dest = data["dest"] # for debugging
         if own_dist > next_best[1]:
-            msg = dumps(data )
+            msg = dumps(data)
             try:
                 next_best[0].send(msg)
+                register_send_msg(next_best[0], msg)
                 finalclient = next_best[0]
             except:
+                # print("[ROUTING] Next best not connected")
+                # print(f"[ROUTING] Found next best for {dest[0]}:{dest[1]}")
                 pass
-                #print("[LOSS] Next best not connected")
-            # print(f"[INFO] Found next best for {dest[0]}:{dest[1]}")
-
-            print("Sent packet, waiting for response")
-            encrypted_req = client["conn"].recv(1024)
-            request = self.key.decrypt(encrypted_req)
-            print("Received response: ", request.decode("ascii"))
-            ans = hex(int((request.decode("ascii")), 16) + int((request.decode("ascii")), 16))
-            print("Sending answer: ", ans)
-            encrypted_ans = self.key.encrypt(ans.encode())
-            client["conn"].send(encrypted_ans)
-
         else:
-            # print(f"[LOSS] No path found to {dest[0]}:{dest[1]}:!")
+            # print(f"[ROUTING] No path found to {dest[0]}:{dest[1]}:!")
             pass
 
         return finalclient
@@ -246,15 +246,7 @@ class DroneAgent:
                 data["dest"] = (client["ip"], client["port"])
                 msg = dumps(data)
                 client["conn"].send(msg)
-                print("Sent packet, waiting for response")
-                encrypted_req = client["conn"].recv(1024)
-                request = self.key.decrypt(encrypted_req)
-                print("Received response: ", request.decode("ascii"))
-                ans = hex(int((request.decode("ascii")), 16) + int((request.decode("ascii")), 16))
-                print("Sending answer: ", ans)
-                encrypted_ans = self.key.encrypt(ans.encode())
-                client["conn"].send(encrypted_ans)
-
+                self.register_send_msg(client, data)
                 finalclient = client["conn"]
             else:
                 data["dest"] = (client["ip"], client["port"])
@@ -264,23 +256,22 @@ class DroneAgent:
             data["dest"] = (client["ip"], client["port"])
             dest_state = client["state"]
             finalclient = self.next_best(dest_state, data)
+
         return finalclient
 
-    def recieveACK(self, clientConn):
-        try:
-            data = clientConn.recv(1024)
-            data = loads(data)
-            print(f"[ACK] Received ACK for {data['ImageNo']}")
-            key = data['image_seq']
-            if key in self.ack_trace:
-                self.ack_trace.pop(key)
-        except:
-            #print('waiting Ack')
-            pass
+    def waitACK(self, key):
+        while (1):
+            time.sleep(ACK_TIMER)
+            try:
+                self.ack_trace[key][2] = 1
+            except:
+                return
 
     def register_send_msg(self,client,data):
         key = data['image_seq']
-        self.ack_trace[key] = [client,data,'False']
+        self.ack_trace[key] = [client, data, 0]
+        thread = threading.Thread(target=self.waitACK, args=(key,))
+        thread.start()
 
 
     def spin(self):
@@ -289,44 +280,49 @@ class DroneAgent:
             image = np.random.randint(255, size=IMAGE_SHAPE, dtype=np.uint8)  # Camera Feed
             img = ''.join(random.choice('0123456789abcdef') for i in range(16))
             data = {
+                "source": self.server_addr , 
                 "dest": (None, None),
+                "ACK":  False,
+                "image_seq": img,   
                 "state": self.state,
-                "image": image,
-                "image_seq": img,
-                "server_add": self.server_addr
+                "image": image
             }
 
-            for data in self.forward_queue:
+            for ack_data in self.ack_queue:
                 client = None
                 for entry in self.client_conns["connections"]:
-                    if data["dest"] == (entry["ip"], entry["port"]):
+                    if ack_data["dest"] == (entry["ip"], entry["port"]):
                         client = entry
                         break
 
                 if client is not None:
-                    conn = self.send_msg(client, data)
-                    self.register_send_msg(client, data)
-                    if conn is not None:
-                        self.recieveACK(conn)
-                else:
-                    continue
+                    conn = self.send_msg(client, ack_data)
+            self.ack_queue.clear()    
+
+            for forward_data in self.forward_queue:
+                client = None
+                for entry in self.client_conns["connections"]:
+                    if forward_data["dest"] == (entry["ip"], entry["port"]):
+                        client = entry
+                        break
+
+                if client is not None:
+                    conn = self.send_msg(client, forward_data)
+                    self.register_send_msg(client, forward_data)
             self.forward_queue.clear()
 
             for client in self.client_conns["connections"]:
-                #print("Sending msg")
                 conn = self.send_msg(client, data)
-                self.register_send_msg(client, data)
-                if conn != None:
-                    self.recieveACK(conn)
-            time.sleep(10)
-            for ack in self.ack_trace:
-                client_conn = self.ack_trace[ack][0]
-                data = self.ack_trace[ack][1]
-                conn = self.send_msg(client_conn, data)
-                if conn is not None:
-                    print("Missing Ack : Resending image" + str(ack))
-                    self.recieveACK(conn)
+                # self.register_send_msg(client, data)
 
+            for ack in self.ack_trace:
+                if self.ack_trace[ack][2]:
+                    client = self.ack_trace[ack][0]
+                    data = self.ack_trace[ack][1]
+                    # print("ACK Retrasnmit ", data)
+                    print(f"[ACK] Retransmitting to {data['dest'][0]}:{data['dest'][1]}")
+                    conn = self.send_msg(client, data)
+                    self.ack_trace[ack][2] = 0
 
             time.sleep(5)
 
@@ -334,7 +330,7 @@ class DroneAgent:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-s', '--server-ip', default=socket.gethostbyname(socket.gethostname()), type=str)
-    parser.add_argument('-p', '--server-port', default=33200, type=int)
+    parser.add_argument('-p', '--server-port', default=33206, type=int)
     args = parser.parse_args()
 
     SERVER_ADDR = (args.server_ip, args.server_port)
