@@ -1,0 +1,19 @@
+covariances:
+- 0
+- 0
+- 0
+- 0
+- 0
+- 0
+- 0
+gps_status: null
+header: null
+imu:
+  w: 0.0
+  x: 1.56784
+  y: 1.00325
+  z: 0.67735
+pose:
+  altitude: 102.0
+  latitude: 392.0
+  longitude: 392.0

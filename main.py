@@ -53,10 +53,11 @@ class DroneAgent:
         self.server_dests = self.parse_server_dests(server_dests)
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client_conns = {"connections": []}
-        self.forward_queue = deque(maxlen=10)
+        self.forward_queue = deque(maxlen=20)
         self.key = self.generate_key()
-        self.ack_queue = deque(maxlen=10)
+        self.ack_queue = deque(maxlen=20)
         self.ack_trace = {}
+        self.ack_pop = []
 
         sort_server_dests(self.server_dests)
         for ip, port, state in self.server_dests:
@@ -175,7 +176,14 @@ class DroneAgent:
                         source, dest, ack, img_num, state, image = data["source"], data["dest"], data["ACK"], data["image_seq"], data["state"], data["image"]
                         if ack:
                             print("[ACK] Received ACK...")
-                            self.ack_trace.pop(img_num)
+                            self.ack_pop.append(img_num)
+                            # try:
+                            #     del self.ack_trace[img_num]
+                            # except:
+                            #     # print(img_num)
+                            #     # print(self.ack_trace)
+                            #     print("caught error...")
+                            #     pass
                             continue
                         if (data["dest"] == self.server_addr):
                             # Handle state
@@ -246,7 +254,6 @@ class DroneAgent:
                 data["dest"] = (client["ip"], client["port"])
                 msg = dumps(data)
                 client["conn"].send(msg)
-                self.register_send_msg(client, data)
                 finalclient = client["conn"]
             else:
                 data["dest"] = (client["ip"], client["port"])
@@ -313,7 +320,13 @@ class DroneAgent:
 
             for client in self.client_conns["connections"]:
                 conn = self.send_msg(client, data)
-                # self.register_send_msg(client, data)
+                self.register_send_msg(client, data)
+
+            for ack in self.ack_pop:
+                try:
+                    self.ack_trace.pop(ack)
+                except:
+                    pass
 
             for ack in self.ack_trace:
                 if self.ack_trace[ack][2]:
@@ -330,7 +343,7 @@ class DroneAgent:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-s', '--server-ip', default=socket.gethostbyname(socket.gethostname()), type=str)
-    parser.add_argument('-p', '--server-port', default=33210, type=int)
+    parser.add_argument('-p', '--server-port', default=33215, type=int)
     args = parser.parse_args()
 
     SERVER_ADDR = (args.server_ip, args.server_port)
