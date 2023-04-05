@@ -330,7 +330,7 @@ class DroneAgent:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-s', '--server-ip', default=socket.gethostbyname(socket.gethostname()), type=str)
-    parser.add_argument('-p', '--server-port', default=33206, type=int)
+    parser.add_argument('-p', '--server-port', default=33210, type=int)
     args = parser.parse_args()
 
     SERVER_ADDR = (args.server_ip, args.server_port)
