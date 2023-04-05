@@ -3,6 +3,7 @@
         {
             "ip": "10.35.70.6",
             "port": 33215,
+            "password": 3,
             "state" :{
                     "header" : null,
                     "gps_status": null,
@@ -23,6 +24,7 @@
 	{
             "ip": "10.35.70.26",
             "port": 33225,
+            "password": 5,
             "state" :{
                     "header" : null,
                     "gps_status": null,
@@ -43,6 +45,7 @@
 	{
             "ip": "10.35.70.41",
             "port": 33235,
+            "password": 7,
             "state" :{
                     "header" : null,
                     "gps_status": null,

@@ -50,6 +50,7 @@ class DroneAgent:
     def __init__(self, server_addr, server_dests):
         self.server_addr = server_addr
         self.state = None
+        self.password = None
         self.server_dests = self.parse_server_dests(server_dests)
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client_conns = {"connections": []}
@@ -60,11 +61,12 @@ class DroneAgent:
         self.ack_pop = []
 
         sort_server_dests(self.server_dests)
-        for ip, port, state in self.server_dests:
+        for ip, port, password, state in self.server_dests:
             self.client_conns["connections"].append({
                 "conn": socket.socket(socket.AF_INET, socket.SOCK_STREAM),
                 "ip": ip,
                 "port": port,
+                "password": password,
                 "state": state
             })
 
@@ -99,11 +101,13 @@ class DroneAgent:
     def parse_server_dests(self, server_dests):
         out = []
         del_idx = None
-        for idx, (ip, port, state) in enumerate(server_dests):
+        for idx, (ip, port, password, state) in enumerate(server_dests):
             if self.server_addr == (ip, port):
+                print(password)
                 self.state = state
+                self.password = password
                 continue
-            out.append((ip, port, state))
+            out.append((ip, port, password, state))
         if isinstance(del_idx, int):
             out.pop(idx)
         return out
@@ -144,8 +148,17 @@ class DroneAgent:
                 os.mkdir('data')
             if str(client_name) not in os.listdir('data'):
                 os.mkdir('data/' + client_name)
-            key = self.generate_key()
+
+            conn_client_idx = None
+            for idx, entry in enumerate(self.client_conns["connections"]):
+                print(entry["ip"], addr[0])
+                if entry["ip"] == addr[0]:
+                    conn_client_idx = idx
+                    break
+
             while True:
+                if conn_client_idx is None:
+                    break
                 try:
                     data = conn.recv(4096)
                     if data == int(1).to_bytes(1, 'little'):
@@ -173,17 +186,12 @@ class DroneAgent:
                         #     print("Expected answer received")
 
                         data = loads(data)
-                        source, dest, ack, img_num, state, image = data["source"], data["dest"], data["ACK"], data["image_seq"], data["state"], data["image"]
+                        source, dest, ack, password, img_num, state, image = data["source"], data["dest"], data["ACK"], data["password"], data["image_seq"], data["state"], data["image"]
+                        print(password)
+                        good = self.check_pwd(conn_client_idx, password)
                         if ack:
                             print("[ACK] Received ACK...")
                             self.ack_pop.append(img_num)
-                            # try:
-                            #     del self.ack_trace[img_num]
-                            # except:
-                            #     # print(img_num)
-                            #     # print(self.ack_trace)
-                            #     print("caught error...")
-                            #     pass
                             continue
                         if (data["dest"] == self.server_addr):
                             # Handle state
@@ -213,6 +221,16 @@ class DroneAgent:
                     break
         print(f"[CONNECTION] Disconnected from {addr}")  
 
+    def check_pwd(self, client_idx, password):
+        print("here...")
+        client_password = self.client_conns["connections"][client_idx]["password"]
+        desired = client_password * 2
+        received = self.key.decrypt(password).decode("ascii")
+        print(desired, received)
+
+        self.client_conns["connections"][client_idx]["password"] = desired
+
+        return True
 
     def next_best(self, dest_state, data):
         """
@@ -280,16 +298,39 @@ class DroneAgent:
         thread = threading.Thread(target=self.waitACK, args=(key,))
         thread.start()
 
+    def make_pwd(self):
+        self.password += self.password
+        request = str(self.password)
+        return self.key.encrypt(request.encode())
 
     def spin(self):
         while True:
             # image = np.random.randint(255, size=IMAGE_SHAPE, dtype=np.uint8).tobytes() # Camera Feed
             image = np.random.randint(255, size=IMAGE_SHAPE, dtype=np.uint8)  # Camera Feed
             img = ''.join(random.choice('0123456789abcdef') for i in range(16))
+            
+            # request = secrets.token_hex(16)
+            # encrypted_req = key.encrypt(request.encode())
+            # conn.send(encrypted_req)
+            # print("Verifying sender, sending value: ", request)
+            # expected_ans = hex(int(request, 16) + int(request, 16))
+            # print("The expected reply is: ", expected_ans)
+            # encrypted_ans = conn.recv(1024)
+            # print("Encrypted Ans : ", encrypted_ans)
+            # try:
+            #     print(ans)
+            #     ans = key.decrypt(encrypted_ans)
+            # except:
+            #     print("decrypt error")
+            #     break
+            # print("Received answer: ", ans.decode("ascii"))
+            # if ((ans.decode("ascii")) == expected_ans):
+            #     print("Expected answer received")
             data = {
                 "source": self.server_addr , 
                 "dest": (None, None),
                 "ACK":  False,
+                "password": self.make_pwd(),
                 "image_seq": img,   
                 "state": self.state,
                 "image": image
@@ -351,7 +392,7 @@ if __name__ == '__main__':
     
     with open('rasp-test.json') as f:
         data = json.load(f)
-        server_dests = [(agent["ip"], agent["port"], agent["state"]) for agent in data["info"]]
+        server_dests = [(agent["ip"], agent["port"], agent["password"], agent["state"]) for agent in data["info"]]
         f.close()
 
     print(SERVER_ADDR[0])
