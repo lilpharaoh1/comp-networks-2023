@@ -1,4 +1,4 @@
-# Emran x Nadeep Computer Networks Project Two
+# Emran x Navdeep Computer Networks Project Two
 
 ## Set Up
 
