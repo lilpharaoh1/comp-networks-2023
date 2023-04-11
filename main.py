@@ -168,13 +168,13 @@ class DroneAgent:
                         data = loads(data)
                         source, dest, ack, password, img_num, state, image = data["source"], data["dest"], data["ACK"], data["password"], data["image_seq"], data["state"], data["image"]
                         
-                        if self.check_valid_pwd(password):
+                        if True:#self.check_valid_pwd(password):
                             if ack:
                                 print("[ACK] Received ACK...")
                                 self.ack_pop.append(img_num)
                                 continue
                             if (data["dest"] == self.server_addr):
-                                if self.check_pwd(conn_client_idx, password):
+                                if self.check_pwd2(password, img_num):#self.check_pwd(conn_client_idx, password):
                                     # Handle state
                                     for client in self.client_conns["connections"]:
                                         if (client["ip"], client["port"]) is dest:
@@ -222,6 +222,12 @@ class DroneAgent:
             return True
         return False
 
+    def check_pwd2(self, password, image_num):
+        received = self.key.decrypt(password).decode("ascii")
+        if received == image_num:
+            return True
+        return False
+
     def next_best(self, dest_state, data):
         """
         Greedy BFS to find shortest path -> quick
@@ -258,7 +264,7 @@ class DroneAgent:
         finalclient = None
 
         data["dest"] = (client["ip"], client["port"])
-        data["password"] = self.make_pwd(client["password"])
+        data["password"] = self.make_pwd(data["image_seq"])
 
         try:
             if (client["conn"].getsockname()[0] != '0.0.0.0'): 

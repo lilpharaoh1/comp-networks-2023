@@ -23,7 +23,7 @@
         },
 	{
             "ip": "10.35.70.26",
-            "port": 33225,
+            "port": 33226,
             "password": 5,
             "state" :{
                     "header" : null,
