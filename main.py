@@ -50,7 +50,6 @@ class DroneAgent:
     def __init__(self, server_addr, server_dests):
         self.server_addr = server_addr
         self.state = None
-        self.password = None
         self.server_dests = self.parse_server_dests(server_dests)
         self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client_conns = {"connections": []}
@@ -61,12 +60,11 @@ class DroneAgent:
         self.ack_pop = []
 
         sort_server_dests(self.server_dests)
-        for ip, port, password, state in self.server_dests:
+        for ip, port, state in self.server_dests:
             self.client_conns["connections"].append({
                 "conn": socket.socket(socket.AF_INET, socket.SOCK_STREAM),
                 "ip": ip,
                 "port": port,
-                "password": password,
                 "state": state
             })
 
@@ -101,12 +99,11 @@ class DroneAgent:
     def parse_server_dests(self, server_dests):
         out = []
         del_idx = None
-        for idx, (ip, port, password, state) in enumerate(server_dests):
+        for idx, (ip, port, state) in enumerate(server_dests):
             if self.server_addr == (ip, port):
                 self.state = state
-                self.password = password
                 continue
-            out.append((ip, port, password, state))
+            out.append((ip, port, state))
         if isinstance(del_idx, int):
             out.pop(idx)
         return out
@@ -168,13 +165,13 @@ class DroneAgent:
                         data = loads(data)
                         source, dest, ack, password, img_num, state, image = data["source"], data["dest"], data["ACK"], data["password"], data["image_seq"], data["state"], data["image"]
                         
-                        if True:#self.check_valid_pwd(password):
+                        if self.check_valid_pwd(password):
                             if ack:
                                 print("[ACK] Received ACK...")
                                 self.ack_pop.append(img_num)
                                 continue
                             if (data["dest"] == self.server_addr):
-                                if self.check_pwd2(password, img_num):#self.check_pwd(conn_client_idx, password):
+                                if self.check_pwd(password, img_num):
                                     # Handle state
                                     for client in self.client_conns["connections"]:
                                         if (client["ip"], client["port"]) is dest:
@@ -206,23 +203,14 @@ class DroneAgent:
 
     def check_valid_pwd(self, password):
         try:
-            received = int(self.key.decrypt(password).decode("ascii"))
+            received = self.key.decrypt(password).decode("ascii")
+            if len(received) == 16:
+                return True
         except: 
             return False
-        for client in self.client_conns["connections"]:
-            if received == client["password"] or received == self.password:
-                return True
         return False
 
-    def check_pwd(self, client_idx, password):
-        client_password = self.client_conns["connections"][client_idx]["password"]
-        desired = self.password
-        received = self.key.decrypt(password).decode("ascii")
-        if int(desired) == int(received):
-            return True
-        return False
-
-    def check_pwd2(self, password, image_num):
+    def check_pwd(self, password, image_num):
         received = self.key.decrypt(password).decode("ascii")
         if received == image_num:
             return True
@@ -366,7 +354,7 @@ class DroneAgent:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-s', '--server-ip', default=socket.gethostbyname(socket.gethostname()), type=str)
-    parser.add_argument('-p', '--server-port', default=33216, type=int)
+    parser.add_argument('-p', '--server-port', default=33215, type=int)
     args = parser.parse_args()
 
     SERVER_ADDR = (args.server_ip, args.server_port)
@@ -374,7 +362,7 @@ if __name__ == '__main__':
     
     with open('rasp-test.json') as f:
         data = json.load(f)
-        server_dests = [(agent["ip"], agent["port"], agent["password"], agent["state"]) for agent in data["info"]]
+        server_dests = [(agent["ip"], agent["port"], agent["state"]) for agent in data["info"]]
         f.close()
 
     print(SERVER_ADDR[0])

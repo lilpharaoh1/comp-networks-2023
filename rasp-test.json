@@ -2,8 +2,7 @@
     "info": [
         {
             "ip": "10.35.70.6",
-            "port": 33216,
-            "password": 3,
+            "port": 33215,
             "state" :{
                     "header" : null,
                     "gps_status": null,
@@ -23,8 +22,7 @@
         },
 	{
             "ip": "10.35.70.26",
-            "port": 33226,
-            "password": 5,
+            "port": 33225,
             "state" :{
                     "header" : null,
                     "gps_status": null,
@@ -45,7 +43,6 @@
 	{
             "ip": "10.35.70.41",
             "port": 33235,
-            "password": 7,
             "state" :{
                     "header" : null,
                     "gps_status": null,
