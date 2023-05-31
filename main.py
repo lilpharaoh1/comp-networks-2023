@@ -144,8 +144,16 @@ class DroneAgent:
                 os.mkdir('data')
             if str(client_name) not in os.listdir('data'):
                 os.mkdir('data/' + client_name)
-            key = self.generate_key()
+
+            conn_client_idx = None
+            for idx, entry in enumerate(self.client_conns["connections"]):
+                if entry["ip"] == addr[0]:
+                    conn_client_idx = idx
+                    break
+
             while True:
+                if conn_client_idx is None:
+                    break
                 try:
                     data = conn.recv(4096)
                     if data == int(1).to_bytes(1, 'little'):
@@ -154,65 +162,59 @@ class DroneAgent:
                     else:
                         print(f"[CONNECTION] Received Packet from {addr}...")
 
-                        # request = secrets.token_hex(16)
-                        # encrypted_req = key.encrypt(request.encode())
-                        # conn.send(encrypted_req)
-                        # print("Verifying sender, sending value: ", request)
-                        # expected_ans = hex(int(request, 16) + int(request, 16))
-                        # print("The expected reply is: ", expected_ans)
-                        # encrypted_ans = conn.recv(1024)
-                        # print("Encrypted Ans : ", encrypted_ans)
-                        # try:
-                        #     print(ans)
-                        #     ans = key.decrypt(encrypted_ans)
-                        # except:
-                        #     print("decrypt error")
-                        #     break
-                        # print("Received answer: ", ans.decode("ascii"))
-                        # if ((ans.decode("ascii")) == expected_ans):
-                        #     print("Expected answer received")
-
                         data = loads(data)
-                        source, dest, ack, img_num, state, image = data["source"], data["dest"], data["ACK"], data["image_seq"], data["state"], data["image"]
-                        if ack:
-                            print("[ACK] Received ACK...")
-                            self.ack_pop.append(img_num)
-                            # try:
-                            #     del self.ack_trace[img_num]
-                            # except:
-                            #     # print(img_num)
-                            #     # print(self.ack_trace)
-                            #     print("caught error...")
-                            #     pass
-                            continue
-                        if (data["dest"] == self.server_addr):
-                            # Handle state
-                            for client in self.client_conns["connections"]:
-                                if (client["ip"], client["port"]) is dest:
-                                    client["state"] = state
-                                    break
-                            with open("data/" + client_name + "/" + str(source[1]) + "_" + str(img_num) + ".yml",
-                                        'w') as outfile:
-                                yaml.dump(state, outfile, default_flow_style=False)
+                        source, dest, ack, password, img_num, state, image = data["source"], data["dest"], data["ACK"], data["password"], data["image_seq"], data["state"], data["image"]
+                        
+                        if self.check_valid_pwd(password):
+                            if ack:
+                                print("[ACK] Received ACK...")
+                                self.ack_pop.append(img_num)
+                                continue
+                            if (data["dest"] == self.server_addr):
+                                if self.check_pwd(password, img_num):
+                                    # Handle state
+                                    for client in self.client_conns["connections"]:
+                                        if (client["ip"], client["port"]) is dest:
+                                            client["state"] = state
+                                            break
+                                    with open("data/" + client_name + "/" + str(source[1]) + "_" + str(img_num) + ".yml",
+                                                'w') as outfile:
+                                        yaml.dump(state, outfile, default_flow_style=False)
 
-                            # Handle image
-                            save_name = "data/" + client_name + "/" + str(source[1]) + "_" + str(img_num) + ".png"
-                            np.save(save_name, image)
-                            tmp = data["source"]
-                            data["source"] = data["dest"]
-                            data["dest"] = tmp
-                            data["ACK"] = True
-                            self.ack_queue.append(data)
+                                    # Handle image
+                                    save_name = "data/" + client_name + "/" + str(source[1]) + "_" + str(img_num) + ".png"
+                                    np.save(save_name, image)
+                                    tmp = data["source"]
+                                    data["source"] = data["dest"]
+                                    data["dest"] = tmp
+                                    data["ACK"] = True
+                                    self.ack_queue.append(data)
+                                else:
+                                    print(f"[SECURITY] Invalid password recevied from {addr}")
+                            else:
+                                self.forward_queue.append(data)
                         else:
-                            self.forward_queue.append(data)
-                        # else:
-                        #     print("Malicious")
+                            print(f"[SECURITY] Malicious message received from {addr}")
 
                 except:
                     print("[ERROR] Error with conn.recv")
                     break
         print(f"[CONNECTION] Disconnected from {addr}")  
 
+    def check_valid_pwd(self, password):
+        try:
+            received = self.key.decrypt(password).decode("ascii")
+            if len(received) == 16:
+                return True
+        except: 
+            return False
+        return False
+
+    def check_pwd(self, password, image_num):
+        received = self.key.decrypt(password).decode("ascii")
+        if received == image_num:
+            return True
+        return False
 
     def next_best(self, dest_state, data):
         """
@@ -239,7 +241,7 @@ class DroneAgent:
             except:
                 # print("[ROUTING] Next best not connected")
                 # print(f"[ROUTING] Found next best for {dest[0]}:{dest[1]}")
-                pass
+                pass    
         else:
             # print(f"[ROUTING] No path found to {dest[0]}:{dest[1]}:!")
             pass
@@ -249,18 +251,18 @@ class DroneAgent:
     def send_msg(self, client, data):
         finalclient = None
 
+        data["dest"] = (client["ip"], client["port"])
+        data["password"] = self.make_pwd(data["image_seq"])
+
         try:
-            if (client["conn"].getsockname()[0] != '0.0.0.0'):
-                data["dest"] = (client["ip"], client["port"])
+            if (client["conn"].getsockname()[0] != '0.0.0.0'): 
                 msg = dumps(data)
                 client["conn"].send(msg)
                 finalclient = client["conn"]
             else:
-                data["dest"] = (client["ip"], client["port"])
                 dest_state = client["state"]
                 finalclient = self.next_best(dest_state, data)
         except:
-            data["dest"] = (client["ip"], client["port"])
             dest_state = client["state"]
             finalclient = self.next_best(dest_state, data)
 
@@ -280,16 +282,21 @@ class DroneAgent:
         thread = threading.Thread(target=self.waitACK, args=(key,))
         thread.start()
 
+    def make_pwd(self, password):
+        request = str(password)
+        return self.key.encrypt(request.encode())
 
     def spin(self):
         while True:
             # image = np.random.randint(255, size=IMAGE_SHAPE, dtype=np.uint8).tobytes() # Camera Feed
             image = np.random.randint(255, size=IMAGE_SHAPE, dtype=np.uint8)  # Camera Feed
             img = ''.join(random.choice('0123456789abcdef') for i in range(16))
+            
             data = {
                 "source": self.server_addr , 
                 "dest": (None, None),
                 "ACK":  False,
+                "password": None,
                 "image_seq": img,   
                 "state": self.state,
                 "image": image
@@ -323,12 +330,16 @@ class DroneAgent:
                 self.register_send_msg(client, data)
 
             for ack in self.ack_pop:
-                try:
+                try:    
                     self.ack_trace.pop(ack)
+                    # print(f"[ACK] Succesfully popped {ack}")
                 except:
+                    # print(f"[ACK] Failed to pop {ack}")
                     pass
+            self.ack_pop.clear() 
 
             for ack in self.ack_trace:
+                # print("[ACK] ack_trace: ", ack)
                 if self.ack_trace[ack][2]:
                     client = self.ack_trace[ack][0]
                     data = self.ack_trace[ack][1]
